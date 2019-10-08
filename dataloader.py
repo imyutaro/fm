@@ -23,3 +23,14 @@ class fm_data(Dataset):
 
     def __getitem__(self, idx):
         pass
+
+    def n_item(self):
+        prod_set = set()
+        for i in data:
+            prod_set |= i[1]
+        return len(prod_set)
+
+
+if __name__=="__main__":
+    data = fm_data()
+    print(data.data)
