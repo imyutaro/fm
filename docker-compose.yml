@@ -2,10 +2,13 @@ version: '3'
 services:
   python3:
     container_name: 'fm'
-    user: "1000:1000"
+    user: "${UID}:${GID}"
     restart: always
     build: .
     working_dir: '/home/user/fm/'
     tty: true
     volumes:
       - ./:/home/user/fm/
+    ports:
+      - "8888:8888"
+    command: jupyter lab --ip=0.0.0.0 --allow-root --no-browser
