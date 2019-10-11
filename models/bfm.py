@@ -53,8 +53,8 @@ class BFM(nn.Module):
         x[n+2*m:] is t^m transaction of t
         pmi has to be calculated in preprocessing.
         """
-        t = x[0:n+2*m-1]                                            # transaction
-        tm = x[n+2*m:]                                              # t^m transaction 
+        t = x[0:n+2*m-1]                                        # transaction
+        tm = x[n+2*m:]                                          # t^m transaction 
         y = self.fm(t) + self.alpha*pmi*self.constrain(t, tm)   # final equation
 
         return y
