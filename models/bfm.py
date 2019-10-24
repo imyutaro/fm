@@ -1,6 +1,8 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.optim as optim
 
 # for reproducibility
 def seed_everything(seed=1234):
@@ -10,7 +12,8 @@ def seed_everything(seed=1234):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-seed_everything()
+seed=1234
+seed_everything(seed)
 
 class BFM(nn.Module):
     """
@@ -33,62 +36,99 @@ class BFM(nn.Module):
     --------------------
     """
     def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0):
-        super(FM, self).__init__()
+        super(BFM, self).__init__()
         # biases
         self.w_0 = torch.randn(1, dtype=torch.float32, requires_grad=True)
         self.w_bias = nn.Parameter(torch.rand(n+2*m, 1))
 
         # input (input must one-hot vector)
-        self.u_V = nn.Parameter(torch.rand(k, n))
-        self.t_V = nn.Parameter(torch.rand(k, m))
-        self.b_V = nn.Parameter(torch.rand(k, m))
+        self.u_V = nn.Parameter(torch.normal(0, 1, size=(n, k)))
+        self.t_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
+        self.b_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
+
+        # sigmoid
+        self.sigmoid = nn.Sigmoid()
 
         # hyper parameter
         self.alpha = alpha
+        self.gamma = gamma
 
-    def forward(self, x, pmi):
+    def forward(self, x, delta, pmi):
         """
         Input data has to be 1 transaction.
-        x[0:n+2*m-1] is target transaction t, 
+        x[0:n+2*m-1] is target transaction t,
         x[n+2*m:] is t^m transaction of t
         pmi has to be calculated in preprocessing.
         """
-        t = x[0:n+2*m-1]                                        # transaction
-        tm = x[n+2*m:]                                          # t^m transaction 
-        y = self.fm(t) + self.alpha*pmi*self.constrain(t, tm)   # final equation
+        # transaction
+        t = x[:n+2*m]
+        # t^m transaction
+        tm = x[n+2*m:]
+        y = self.fm(t)
+        y = self.sigmoid(y*delta.float())
+
+        # final equation
+        # y += self.alpha*pmi*self.constrain(t, tm)
 
         return y
 
     def fm(self, x):
-        # bias for each users and items(target & basket)
-        bias = torch.mm(self.w_bias, x)
+        x = x.view((1, x.shape[0]))                             # maybe have to extend dim
+        # Bias for each users and items(target & basket)
+        bias = torch.mm(x, self.w_bias)
 
-        # latent vectors
-        # x = x[0:n+2*m-1]
+        # Latent vectors
+        # x = x[:n+2*m]
         # x = x.view((1, x.shape[0]))                           # maybe have to extend dim
-        u_vec = torch.mm(self.u_V, x[0:n-1]).view(-1)           # user latent vec
-        t_vec = torch.mm(self.t_V, x[n:n+m-1])).view(-1)        # target item latent vec
-        b_vecs = torch.mm(self.b_V, x[n+m:n+2*m-1]).view(-1)    # basket items latent vecs
-        n_b = b_vecs.shape[1]                                   # number of basket items
 
-        # user & target item relation
-        u_t = torch.dot(u_vec, t_vec)
+        # User latent vec
+        u_vec = torch.mm(x[:,:n], self.u_V)
 
-        # target item & basket items relation
+        # Target item latent vec
+        t_vec = torch.mm(x[:,n:n+m], self.t_V)
+
+        # Basket items latent vecs
+        # Basket items indices
+        index = (x[0,n+m:n+2*m]==1).nonzero()
+        b_vecs = self.b_V[index,:]
+        # The number of basket items
+        n_b = list(index.shape)[0]
+
+        # User & target item relation
+        u_t = torch.dot(u_vec.view(-1), t_vec.view(-1))
+
+        # Target item & basket items relation
+        t_b = None
         for i in range(n_b):
-            t_b += torch.dot(t_vec, b_vecs[i])
+            if t_b is None:
+                t_b = torch.mm(t_vec, torch.t(b_vecs[i]))
+            else:
+                t_b += torch.mm(t_vec, torch.t(b_vecs[i]))
 
-        # among basket items relation
+        # Among basket items relation
+        bs = None
         for i in range(n_b):
             for j in range(i+1, n_b):
-                bs += torch.dot(b_vecs[i], b_vecs[j])
+                if bs is None:
+                    bs = torch.mm(b_vecs[i], torch.t(b_vecs[j]))
+                else:
+                    bs += torch.mm(b_vecs[i], torch.t(b_vecs[j]))
 
-        # user & basket items relation
+        # User & basket items relation
+        u_b = None
         for i in range(n_b):
-            u_b += torch.dot(u_vec, b_vecs[i])
+            if u_b is None:
+                u_b = torch.mm(u_vec, torch.t(b_vecs[i]))
+            else:
+                u_b += torch.mm(u_vec, torch.t(b_vecs[i]))
 
-        # output
-        y = self.w_0 + bias + gamma[0]*u_t + gamma[1]*t_b + gamma[2]*bs + gamma[3]*u_b
+        # Output
+        y = self.w_0 + bias + \
+            self.gamma[0]*u_t + \
+            self.gamma[1]*t_b + \
+            self.gamma[2]*bs + \
+            self.gamma[3]*u_b
+
         return y
 
         def constrain(self, t, tm):
@@ -103,10 +143,44 @@ class BFM(nn.Module):
 
 
 if __name__=="__main__":
+    import sys
+    sys.path.append("../")
+    from tmp_dataloader import Data
 
-    # criterion = nn.CrossEntropyLoss()
+    ds = Data()
+    train, test, valid = ds.get_data()
 
+    """
+    n:      # users
+    m:      # items
+    k:      latent vec dim
+    """
+    n = len(ds.usrset)
+    m = len(ds.itemset)
+    k = 32
+
+    model = BFM(n, m, k, gamma=[1,1,1,1], alpha=0.0)
+    criterion = nn.BCELoss()
+    # criterion = nn.NLLLoss()
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=0.01)
+    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.01)
+
+    cnt = 0
+    for x in train:
+        optimizer.zero_grad()
+        x, label = x[0], x[1]
+        y = model(x, delta=label, pmi=1)
+        if label.item()==-1:
+            loss = criterion(y, torch.tensor([[0.]]))
+        else:
+            loss = criterion(y, label)
+        loss.backward()
+        optimizer.step()
+        if cnt%2500==0:
+            print(f"Loss : {loss}")
+        cnt+=1
+    print(cnt) # => 957264
+
+
