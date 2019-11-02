@@ -1,14 +1,21 @@
 version: '3'
 services:
   python3:
-    container_name: 'fm'
-    user: "${UID}:${GID}"
+    image: "ueno_experiment"
+    container_name: "fm"
+    user: "${USER_ID}:${GROUP_ID}"
     restart: always
     build: .
-    working_dir: '/home/user/fm/'
+    working_dir: "/home/${USER_NAME}/fm/"
     tty: true
     volumes:
-      - ./:/home/user/fm/
+      - ./:/home/${USER_NAME}/fm/
     ports:
       - "8888:8888"
+    build:
+      context: .
+      args:
+        - USER_ID=${USER_ID}
+        - GROUP_ID=${GROUP_ID}
+        - USER_NAME=${USER_NAME}
     command: jupyter lab --ip=0.0.0.0 --allow-root --no-browser
