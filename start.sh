@@ -1,5 +1,4 @@
-#!/usr/bin/zsh
-
+#!/bin/sh
 export USER_ID=${UID}
 export GROUP_ID=${GID}
 export USER_NAME=docker
