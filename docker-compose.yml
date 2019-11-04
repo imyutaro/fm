@@ -17,4 +17,8 @@ services:
       args:
         - USER_ID=${USER_ID}
         - USER_NAME=${USER_NAME}
-    command: jupyter lab --ip=0.0.0.0 --allow-root --no-browser
+    command: jupyter lab --ip=0.0.0.0 --no-browser
+
+    # If you exec jupyter as root, you need --allow-root.
+    # But I mapped UID as non root, so I don't need --allow-root.
+    # command: jupyter lab --ip=0.0.0.0 --allow-root --no-browser
