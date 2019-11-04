@@ -4,7 +4,7 @@ USER root
 RUN apt-get update
 RUN apt-get -y install locales && \
     localedef -f UTF-8 -i en_US en_US.UTF-8
-RUN apt-get -y install zsh
+RUN apt-get -y install zsh git
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
@@ -29,4 +29,14 @@ RUN pip install -r ./req.txt
 RUN jupyter labextension install jupyterlab_vim
 
 USER $USER_NAME
+
+# run the installation script and create my simple .zshrc
+RUN wget https://github.com/robbyrussell/oh-my-zsh/raw/master/tools/install.sh -O - | zsh || true \
+    touch $HOME/.zshrc && \
+    echo 'export ZSH=${HOME}/.oh-my-zsh' > $HOME/.zshrc && \
+    echo 'ZSH_THEME="mh"' >> $HOME/.zshrc && \
+    echo 'plugins=(git)' >> $HOME/.zshrc && \
+    echo 'source $ZSH/oh-my-zsh.sh' >> $HOME/.zshrc
+# start zsh
+CMD [ "zsh" ]
 
