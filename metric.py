@@ -1,7 +1,16 @@
 import torch
 import numpy as np
 from tqdm import tqdm
-from multiprocessing import Pool
+import multiprocessing
+
+def predict(x, idx, model):
+    x[idx] = 1
+    with torch.no_grad():
+        y = model.fm(x)
+    return y.item()
+
+def wrapper_func(args):
+    return predict(x=args[0], idx=args[1], model=args[2])
 
 def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     """
@@ -30,12 +39,17 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
             target_idx = (x[n:n+m]==1).nonzero()+n
             x[n:n+m] = 0
 
-            rank_dict = {}
+            # multi-processing
+            args = []
             for idx in range(n, n+m):
-                x[idx] = 1
-                y = model.fm(x)
-                rank_dict[idx] = y
-                x[idx] = 0
+                args.append((x, idx, model))
+            processes = max(1, multiprocessing.cpu_count()-1)
+            p = multiprocessing.Pool(processes)
+            result_multi = p.imap(wrapper_func, args)
+            rank_dict = {arg[1]: result for arg, result in zip(args, result_multi)}
+            p.close()
+            p.terminate()
+
             # Sort
             sorted_rank = sorted(rank_dict.items(), key=lambda x:x[1])
             # rank
