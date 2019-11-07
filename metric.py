@@ -12,7 +12,7 @@ def predict(x, idx, model):
 def wrapper_func(args):
     return predict(x=args[0], idx=args[1], model=args[2])
 
-def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
+def multipro_hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     """
     target itemでfor文を回してscoreが高い順に並べる必要がある.
     one-hot ベースでやる(x[n:n+m]ベースで)
@@ -35,7 +35,7 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     rank_sum = 0
     with torch.no_grad():
         for x in tqdm(test, total=n_test):
-            x, label = x[0], x[1]
+            x, _ = x[0], x[1]
             target_idx = (x[n:n+m]==1).nonzero()+n
             x[n:n+m] = 0
 
@@ -61,10 +61,48 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     hlu = (C*rank_sum)/n_test
     return hlu
 
+def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
+    beta -= 1
+    rank_sum = 0
+    cnt = 0
+    with torch.no_grad():
+        # for x in tqdm(test, total=n_test):
+        for x in test:
+            cnt += 1
+            x, _ = x[0], x[1]
+            target_idx = (x[n:n+m]==1).nonzero()
+            # Predict
+            y = model.rank_list(x).tolist()
+
+            """debug
+            print(y[target_idx])
+            # _ = [print(i) for i in y if i>y[target_idx]]
+            num=0
+            for i in y:
+                if i==y[target_idx]:
+                    num+=1
+            print(num)
+            if cnt == 10:
+                exit()
+            """
+
+            rank_dict = {idx : predict for idx, predict in enumerate(y)}
+            # Sort
+            sorted_rank = sorted(rank_dict.items(), key=lambda x:x[1])
+            # rank
+            rank = [i for i, v in enumerate(sorted_rank) if v[0]==target_idx][0]
+
+            # Summation
+            rank_sum += 2**((1-rank)/beta)
+
+    hlu = (C*rank_sum)/n_test
+    print("Finish cal")
+    return hlu
+
 def r_at_n(test, n_test, model, itemset, n, m, rank=10):
     pass
 
-if __name__=="__main__":
+def main():
     from tmp_dataloader import Data
     from models import bfm
 
@@ -90,3 +128,5 @@ if __name__=="__main__":
     result = hlu(test, n_test, model, itemset, n, m)
     print(result)
 
+if __name__=="__main__":
+    main()
