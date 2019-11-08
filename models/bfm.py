@@ -83,13 +83,11 @@ class BFM(nn.Module):
         return y
 
     def fm(self, x):
-        x = x.view((1, x.shape[0]))                             # maybe have to extend dim
+        # transaction vec whose elements are only 0 or 1.
+        x = x.view((1, x.shape[0]))
+
         # Bias for each users and items(target & basket)
         bias = torch.mm(x, self.w_bias)# .view(-1)
-
-        # Latent vectors
-        # x = x[:self.n+2*m]
-        # x = x.view((1, x.shape[0]))                           # maybe have to extend dim
 
         # User latent vec
         u_vec = torch.mm(x[:,:self.n], self.u_V)
@@ -107,7 +105,6 @@ class BFM(nn.Module):
         u_t = torch.mm(u_vec, t_vec.t())
 
         # Target item & basket items relation
-        # faster
         b_vecs = b_vecs.squeeze()
         t_b = torch.mm(t_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
         # t_b /= n_b
@@ -145,7 +142,6 @@ class BFM(nn.Module):
         """
 
         # User & basket items relation
-        # faster
         u_b = torch.mm(u_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
         # u_b /= n_b
         """
@@ -158,7 +154,8 @@ class BFM(nn.Module):
         """
 
         # Output
-        y = self.w_0 + bias + \
+        y = self.w_0 + \
+            bias + \
             self.gamma[0]*u_t + \
             self.gamma[1]*t_b + \
             self.gamma[2]*bs + \
@@ -197,14 +194,17 @@ class BFM(nn.Module):
 
         # set 1 to all target items
         x[self.n:self.n+self.m] = 1
-        # Bias for each users and items(target & basket)
-        # print(x[:self.n].view(1,-1).shape, self.w_bias[:self.n].shape)
+        # Bias for each users
         u_bias = torch.mm(x[:self.n].view(1,-1), self.w_bias[:self.n])
+        # bias for target items
         t_bias = self.w_bias[self.n:self.n+self.m]
+        # bias for basket items
         b_bias = torch.mm(x[self.n+self.m:self.n+2*self.m].view(1,-1), self.w_bias[self.n+self.m:self.n+2*self.m])
+        # all bias
         bias = (u_bias + t_bias + b_bias).squeeze()
-        # print(bias.shape)
-        x = x.view((1, x.shape[0]))                             # maybe have to extend dim
+
+        # maybe have to extend dim
+        x = x.view((1, x.shape[0]))
 
         # Latent vectors
         # x = x[:self.n+2*m]
@@ -244,7 +244,8 @@ class BFM(nn.Module):
         u_b /= n_b
 
         # Output
-        y = self.w_0 + bias + \
+        y = self.w_0 + \
+            bias + \
             self.gamma[0]*u_t + \
             self.gamma[1]*t_b + \
             self.gamma[2]*bs + \
@@ -353,7 +354,7 @@ def main():
             loss.backward()
             optimizer.step()
             if cnt%2500==0:
-                print(f"Loss : {loss.item():.6f} at {cnt:6d}, " \
+                print(f"Loss : {loss.item():3.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
                       f"# basket item : {x.sum().item()-2:3.0f}")
             cnt+=1
