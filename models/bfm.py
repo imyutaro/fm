@@ -104,24 +104,12 @@ class BFM(nn.Module):
         n_b = list(index.shape)[0]
 
         # User & target item relation
-        # u_t = torch.dot(u_vec.view(-1), t_vec.view(-1))
         u_t = torch.mm(u_vec, t_vec.t())
 
         # Target item & basket items relation
-        # t_b = None
-        # for i in range(n_b):
-        #     if t_b is None:
-        #         t_b = torch.mm(t_vec, torch.t(b_vecs[i]))
-        #     else:
-        #         # t_b += torch.mm(t_vec, torch.t(b_vecs[i]))
-        #         # b_vec = torch.mm(t_vec, torch.t(b_vecs[i]))
-        #         t_b = torch.addmm(t_b, t_vec, torch.t(b_vecs[i]))
-        # t_b /= n_b
-
         # faster
         b_vecs = b_vecs.squeeze()
         t_b = torch.mm(t_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
-        # t_b = torch.sum(torch.mm(t_vec, b_vecs.t()), dim=-1)
         # t_b /= n_b
         """
         # for jit compiling
@@ -135,15 +123,6 @@ class BFM(nn.Module):
         """
 
         # Among basket items relation
-        # bs = None
-        # for i in range(n_b):
-        #     for j in range(i+1, n_b):
-        #         if bs is None:
-        #             bs = torch.mm(b_vecs[i], torch.t(b_vecs[j]))
-        #         else:
-        #             bs += torch.mm(b_vecs[i], torch.t(b_vecs[j]))
-        # bs /= n_b
-
         # faster (maybe 2x faster)
         # At this point range(n_b) makes error because the last for loop i+1==n_b,
         # so b_vecs[i+1:n:b] is size 0 vec. That size 0 vec cause error
@@ -166,17 +145,8 @@ class BFM(nn.Module):
         """
 
         # User & basket items relation
-        # u_b = None
-        # for i in range(n_b):
-        #     if u_b is None:
-        #         u_b = torch.mm(u_vec, torch.t(b_vecs[i]))
-        #     else:
-        #         u_b += torch.mm(u_vec, torch.t(b_vecs[i]))
-        # u_b /= n_b
-
-        # maybe faster
+        # faster
         u_b = torch.mm(u_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
-        # u_b = torch.sum(torch.mm(u_vec, b_vecs.t()), dim=-1, keepdim=True)
         # u_b /= n_b
         """
         # for jit compiling
@@ -287,7 +257,6 @@ class BFM(nn.Module):
         #       f"w_0 : {self.w_0}\n"
         #       f"bias: {bias}\n" \
         #       f"y   : {y}")
-        # print(u_t.shape)
 
         return y
 
