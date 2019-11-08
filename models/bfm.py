@@ -37,17 +37,26 @@ class BFM(nn.Module):
     """
     def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0):
         super(BFM, self).__init__()
-        # biases
-        self.w_0 = torch.randn(1, dtype=torch.float32, requires_grad=True)
-        self.w_bias = nn.Parameter(torch.rand(n+2*m, 1))
+        # parameters
+        self.n = n
+        self.m = m
+        self.k = k
 
-        # input (input must one-hot vector)
-        self.u_V = nn.Parameter(torch.normal(0, 1, size=(n, k)))
-        self.t_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
-        self.b_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
+        # biases
+        self.w_0 = nn.Parameter(torch.randn(1))
+        self.w_bias = nn.Parameter(torch.randn(n+2*m, 1))
+
+        # latent vectors (input must one-hot vector)
+        # self.u_V = nn.Parameter(torch.normal(0, 1, size=(n, k)))
+        # self.t_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
+        # self.b_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
+        self.u_V = nn.Parameter(torch.randn(n, k))
+        self.t_V = nn.Parameter(torch.randn(m, k))
+        self.b_V = nn.Parameter(torch.randn(m, k))
 
         # sigmoid
-        self.sigmoid = nn.Sigmoid()
+        # self.sigmoid = nn.Sigmoid()
+        self.lnsigmoid = nn.LogSigmoid()
 
         # hyper parameter
         self.alpha = alpha
@@ -56,16 +65,17 @@ class BFM(nn.Module):
     def forward(self, x, delta, pmi):
         """
         Input data has to be 1 transaction.
-        x[0:n+2*m-1] is target transaction t,
+        x[0:n+2*m] is target transaction t,
         x[n+2*m:] is t^m transaction of t
         pmi has to be calculated in preprocessing.
         """
         # transaction
-        t = x[:n+2*m]
+        t = x[:self.n+2*self.m]
         # t^m transaction
-        tm = x[n+2*m:]
+        tm = x[self.n+2*self.m:]
         y = self.fm(t)
-        y = self.sigmoid(y*delta.float())
+        y = self.lnsigmoid(y*delta.float())
+        y *= -1
 
         # final equation
         # y += self.alpha*pmi*self.constrain(t, tm)
@@ -75,52 +85,107 @@ class BFM(nn.Module):
     def fm(self, x):
         x = x.view((1, x.shape[0]))                             # maybe have to extend dim
         # Bias for each users and items(target & basket)
-        bias = torch.mm(x, self.w_bias)
+        bias = torch.mm(x, self.w_bias)# .view(-1)
 
         # Latent vectors
-        # x = x[:n+2*m]
+        # x = x[:self.n+2*m]
         # x = x.view((1, x.shape[0]))                           # maybe have to extend dim
 
         # User latent vec
-        u_vec = torch.mm(x[:,:n], self.u_V)
+        u_vec = torch.mm(x[:,:self.n], self.u_V)
 
         # Target item latent vec
-        t_vec = torch.mm(x[:,n:n+m], self.t_V)
+        t_vec = torch.mm(x[:,self.n:self.n+self.m], self.t_V)
 
-        # Basket items latent vecs
-        # Basket items indices
-        index = (x[0,n+m:n+2*m]==1).nonzero()
+        # Basket items latent vecs and Basket items indices
+        index = (x[0,self.n+self.m:self.n+2*self.m]==1).nonzero()
         b_vecs = self.b_V[index,:]
         # The number of basket items
         n_b = list(index.shape)[0]
 
         # User & target item relation
-        u_t = torch.dot(u_vec.view(-1), t_vec.view(-1))
+        # u_t = torch.dot(u_vec.view(-1), t_vec.view(-1))
+        u_t = torch.mm(u_vec, t_vec.t())
 
         # Target item & basket items relation
-        t_b = None
+        # t_b = None
+        # for i in range(n_b):
+        #     if t_b is None:
+        #         t_b = torch.mm(t_vec, torch.t(b_vecs[i]))
+        #     else:
+        #         # t_b += torch.mm(t_vec, torch.t(b_vecs[i]))
+        #         # b_vec = torch.mm(t_vec, torch.t(b_vecs[i]))
+        #         t_b = torch.addmm(t_b, t_vec, torch.t(b_vecs[i]))
+        # t_b /= n_b
+
+        # faster
+        b_vecs = b_vecs.squeeze()
+        t_b = torch.mm(t_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
+        # t_b = torch.sum(torch.mm(t_vec, b_vecs.t()), dim=-1)
+        # t_b /= n_b
+        """
+        # for jit compiling
+        t_b = torch.mm(t_vec, torch.t(b_vecs[0]))
         for i in range(n_b):
-            if t_b is None:
-                t_b = torch.mm(t_vec, torch.t(b_vecs[i]))
-            else:
-                t_b += torch.mm(t_vec, torch.t(b_vecs[i]))
+            if i>0:
+                # t_b += torch.mm(t_vec, torch.t(b_vecs[i]))
+                # b_vec = torch.mm(t_vec, torch.t(b_vecs[i]))
+                t_b = torch.addmm(t_b, t_vec, torch.t(b_vecs[i]))
+        t_b /= n_b
+        """
 
         # Among basket items relation
+        # bs = None
+        # for i in range(n_b):
+        #     for j in range(i+1, n_b):
+        #         if bs is None:
+        #             bs = torch.mm(b_vecs[i], torch.t(b_vecs[j]))
+        #         else:
+        #             bs += torch.mm(b_vecs[i], torch.t(b_vecs[j]))
+        # bs /= n_b
+
+        # faster (maybe 2x faster)
+        # At this point range(n_b) makes error because the last for loop i+1==n_b,
+        # so b_vecs[i+1:n:b] is size 0 vec. That size 0 vec cause error
+        # like : https://github.com/pytorch/pytorch/issues/20006
         bs = None
+        for i in range(n_b-1):
+            if bs is None:
+                bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
+            else:
+                bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
+        # bs /= n_b
+        """
+        # for jit compiling
+        bs = torch.mm(b_vecs[0], torch.t(b_vecs[1]))
         for i in range(n_b):
             for j in range(i+1, n_b):
-                if bs is None:
-                    bs = torch.mm(b_vecs[i], torch.t(b_vecs[j]))
-                else:
+                if i!=0 and j!=1:
                     bs += torch.mm(b_vecs[i], torch.t(b_vecs[j]))
+        bs /= n_b
+        """
 
         # User & basket items relation
-        u_b = None
+        # u_b = None
+        # for i in range(n_b):
+        #     if u_b is None:
+        #         u_b = torch.mm(u_vec, torch.t(b_vecs[i]))
+        #     else:
+        #         u_b += torch.mm(u_vec, torch.t(b_vecs[i]))
+        # u_b /= n_b
+
+        # maybe faster
+        u_b = torch.mm(u_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
+        # u_b = torch.sum(torch.mm(u_vec, b_vecs.t()), dim=-1, keepdim=True)
+        # u_b /= n_b
+        """
+        # for jit compiling
+        u_b = torch.mm(u_vec, torch.t(b_vecs[0]))
         for i in range(n_b):
-            if u_b is None:
-                u_b = torch.mm(u_vec, torch.t(b_vecs[i]))
-            else:
+            if i>0:
                 u_b += torch.mm(u_vec, torch.t(b_vecs[i]))
+        u_b /= n_b
+        """
 
         # Output
         y = self.w_0 + bias + \
@@ -129,31 +194,119 @@ class BFM(nn.Module):
             self.gamma[2]*bs + \
             self.gamma[3]*u_b
 
+        # print(f"u_t : {u_t}\n" \
+        #       f"t_b : {t_b}\n" \
+        #       f"bs  : {bs}\n" \
+        #       f"u_b : {u_b}\n" \
+        #       f"w_0 : {self.w_0}\n"
+        #       f"bias: {bias}\n" \
+        #       f"y   : {y}")
+        # print(f"u_t : {u_t.shape}\n" \
+        #       f"t_b : {t_b.shape}\n" \
+        #       f"bs  : {bs.shape}\n" \
+        #       f"u_b : {u_b.shape}\n" \
+        #       f"w_0 : {self.w_0.shape}\n"
+        #       f"bias: {bias.shape}\n" \
+        #       f"y   : {y.shape}")
+
         return y
 
-        def constrain(self, t, tm):
-            cons = 0.5*(self.fm(t)-self.fm(tm)).pow(2)
-            return cons
+    '''
+    def constrain(self, t, tm):
+        cons = 0.5*(self.fm(t)-self.fm(tm)).pow(2)
+        return cons
 
-        def get_vec(self, x, type="u"):
-            """
-            type will be u(user), i(item)
-            """
-            pass
+    def get_vec(self, x, type="u"):
+        """
+        type will be u(user), i(item)
+        """
+        pass
+    '''
 
+    def rank_list(self, x):
 
-if __name__=="__main__":
+        # set 1 to all target items
+        x[self.n:self.n+self.m] = 1
+        # Bias for each users and items(target & basket)
+        # print(x[:self.n].view(1,-1).shape, self.w_bias[:self.n].shape)
+        u_bias = torch.mm(x[:self.n].view(1,-1), self.w_bias[:self.n])
+        t_bias = self.w_bias[self.n:self.n+self.m]
+        b_bias = torch.mm(x[self.n+self.m:self.n+2*self.m].view(1,-1), self.w_bias[self.n+self.m:self.n+2*self.m])
+        bias = (u_bias + t_bias + b_bias).squeeze()
+        # print(bias.shape)
+        x = x.view((1, x.shape[0]))                             # maybe have to extend dim
+
+        # Latent vectors
+        # x = x[:self.n+2*m]
+        # x = x.view((1, x.shape[0]))                           # maybe have to extend dim
+
+        # User latent vec
+        u_vec = torch.mm(x[:,:self.n], self.u_V)
+
+        # Target item latent vec
+        t_vec = self.t_V.view(self.t_V.shape[0], 1, self.t_V.shape[1])
+
+        # Basket items latent vecs and Basket items indices
+        index = (x[0,self.n+self.m:self.n+2*self.m]==1).nonzero()
+        b_vecs = torch.squeeze(self.b_V[index,:])
+        # The number of basket items
+        n_b = list(index.shape)[0]
+
+        # User & target item relation
+        # u_t = (u_vec.view(1, -1) * t_vec).sum(dim=-1).sum(-1)
+        u_t = (u_vec * t_vec).sum(-1).sum(-1)
+
+        # Target item & basket items relation
+        t_b = (t_vec * b_vecs).sum(-1).sum(-1)
+        t_b /= n_b
+
+        # Among basket items relation
+        bs = None
+        for i in range(n_b):
+            if bs is None:
+                bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
+            else:
+                bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
+        bs /= n_b
+
+        # User & basket items relation
+        u_b = torch.mm(u_vec, b_vecs.t()).sum()
+        u_b /= n_b
+
+        # Output
+        y = self.w_0 + bias + \
+            self.gamma[0]*u_t + \
+            self.gamma[1]*t_b + \
+            self.gamma[2]*bs + \
+            self.gamma[3]*u_b
+
+        # print(f"u_t : {u_t}\n" \
+        #       f"t_b : {t_b}\n" \
+        #       f"bs  : {bs}\n" \
+        #       f"u_b : {u_b}\n" \
+        #       f"w_0 : {self.w_0}\n"
+        #       f"bias: {bias}\n" \
+        #       f"y   : {y}")
+        # print(u_t.shape)
+
+        return y
+
+def main():
     import sys
     sys.path.append("../")
+    import datetime
+    from torch.utils.data import DataLoader
+
     from tmp_dataloader import Data
 
     ds = Data()
     train, test, valid = ds.get_data()
 
+
     """
-    n:      # users
-    m:      # items
-    k:      latent vec dim
+    n: # users
+    m: # items
+    k: latent vec dim
     """
     n = len(ds.usrset)
     m = len(ds.itemset)
@@ -165,13 +318,41 @@ if __name__=="__main__":
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.01)
+    # optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.01)
+    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0, weight_decay=0.01)
 
+    # traced = torch.jit.script(model)
+    # x = next(train)
+    # x, label = x[0], x[1]
+    # traced = torch.jit.trace(model, example_inputs=(x, label, torch.tensor([1.])))
+    # print(traced.code)
+
+    """
+    x = next(train)
+    x, label = x[0], x[1]
+    loss = model(x, delta=label, pmi=1)
+
+    train, test, valid = ds.get_data()
+    model.load_state_dict(torch.load("../trained/BFM_nomalize_minimize_3.pt"))
+    x = next(train)
+    x, label = x[0], x[1]
+    loss = model(x, delta=label, pmi=1)
+
+    train, test, valid = ds.get_data()
+    model.load_state_dict(torch.load("../trained/BFM_nomalize_minimize_1.pt"))
+    x = next(train)
+    x, label = x[0], x[1]
+    loss = model(x, delta=label, pmi=1)
+    exit()
+    """
+
+    """
     cnt = 0
     for x in train:
         optimizer.zero_grad()
         x, label = x[0], x[1]
-        y = model(x, delta=label, pmi=1)
+        delta = torch.tensor([[1.]])
+        y = model(x, delta=delta, pmi=1)
         if label.item()==-1:
             loss = criterion(y, torch.tensor([[0.]]))
         else:
@@ -179,8 +360,38 @@ if __name__=="__main__":
         loss.backward()
         optimizer.step()
         if cnt%2500==0:
-            print(f"Loss : {loss}")
+            print(f"Loss : {loss:.6f} at {cnt:6d}, " \
+                  f"Label : {label.item():2.0f},   " \
+                  f"# basket item : {x.sum().item()-2:3.0f}")
         cnt+=1
     print(cnt) # => 957264
+    os.makedirs("../trained", exist_ok=True)
+    torch.save(model.state_dict(), "../trained/BFM_alldelta1.pt")
+    """
 
+    today = datetime.date.today()
+    model_name = "BFM_minimize_real_faster"
+    epochs = 5
+    print(f"model name : {model_name}")
+    for e in range(epochs):
+        print("{:-^60}".format(f"epoch {e}"))
+        cnt = 0
+        train, _, _ = ds.get_data()
+        for x in train:
+            optimizer.zero_grad()
+            x, label = x[0], x[1]
+            loss = model(x, delta=label, pmi=1)
+            loss.backward()
+            optimizer.step()
+            if cnt%2500==0:
+                print(f"Loss : {loss.item():.6f} at {cnt:6d}, " \
+                      f"Label : {label.item():2.0f},   " \
+                      f"# basket item : {x.sum().item()-2:3.0f}")
+            cnt+=1
+        print(cnt) # => 957264
+        os.makedirs(f"../trained/{today}", exist_ok=True)
+        torch.save(model.state_dict(), f"../trained/{today}/{model_name}_{e}.pt")
+        print("{:-^60}".format(""))
 
+if __name__=="__main__":
+    main()
