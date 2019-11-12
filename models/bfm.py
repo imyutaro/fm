@@ -206,10 +206,6 @@ class BFM(nn.Module):
         # maybe have to extend dim
         x = x.view((1, x.shape[0]))
 
-        # Latent vectors
-        # x = x[:self.n+2*m]
-        # x = x.view((1, x.shape[0]))                           # maybe have to extend dim
-
         # User latent vec
         u_vec = torch.mm(x[:,:self.n], self.u_V)
 
@@ -272,7 +268,6 @@ def main():
     ds = Data()
     train, test, valid = ds.get_data()
 
-
     """
     n: # users
     m: # items
@@ -282,14 +277,24 @@ def main():
     m = len(ds.itemset)
     k = 32
 
-    model = BFM(n, m, k, gamma=[1,1,1,1], alpha=0.0)
+    gamma=[1,1,1,1]
+    alpha=0.0
+
+    lr=0.0001
+    momentum=0
+    weight_decay=0.01
+
+    model = BFM(n, m, k, gamma, alpha)
     criterion = nn.BCELoss()
     # criterion = nn.NLLLoss()
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
     # optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.01)
-    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0, weight_decay=0.01)
+    optimizer = optim.SGD(model.parameters(), \
+                          lr=lr, \
+                          momentum=momentum, \
+                          weight_decay=weight_decay)
 
     # traced = torch.jit.script(model)
     # x = next(train)
@@ -340,12 +345,44 @@ def main():
     """
 
     today = datetime.date.today()
+    # saved directory
+    os.makedirs(f"../trained/bfm/{today}", exist_ok=True)
     model_name = "BFM_minimize_real_faster"
     epochs = 5
-    print(f"model name : {model_name}")
-    for e in range(epochs):
+
+    # Load trained parameters
+    loaded = True
+    if loaded:
+        model_path = "../trained/2019-11-08/BFM_minimize_real_faster_4.pt"
+        model.load_state_dict(torch.load(model_path))
+        epochs = 5
+
+
+    # Print Information
+    print("{:-^60}".format("Data stat"))
+    print(f"# User        : {n}\n" \
+          f"# Item        : {m}")
+    print("{:-^60}".format("Optim status"))
+    print(f"Optimizer     : {optimizer}\n" \
+          f"Learning rate : {lr}\n" \
+          f"Momentum      : {momentum}\n" \
+          f"Weight decay  : {weight_decay}")
+    print("{:-^60}".format("Model/Learning status"))
+    print(f"Model name    : {model_name}\n" \
+          f"Mid dim       : {k}\n" \
+          f"Gamma         : {gamma}\n" \
+          f"Alpha         : {alpha}\n" \
+          f"Epochs        : {epochs}\n" \
+          f"Loaded        : {loaded}")
+    if loaded:
+        print(f"Learned model : {model_path}")
+    print("{:-^60}".format(""))
+
+
+    for e in range(epochs, 50):
         print("{:-^60}".format(f"epoch {e}"))
         cnt = 0
+        ave_loss = 0
         train, _, _ = ds.get_data()
         for x in train:
             optimizer.zero_grad()
@@ -353,15 +390,18 @@ def main():
             loss = model(x, delta=label, pmi=1)
             loss.backward()
             optimizer.step()
+
+            with torch.no_grad():
+                ave_loss += loss.item()
+            cnt+=1
             if cnt%2500==0:
-                print(f"Loss : {loss.item():3.6f} at {cnt:6d}, " \
+                print(f"Last loss : {loss.item():3.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
                       f"# basket item : {x.sum().item()-2:3.0f}")
-            cnt+=1
+                print(f"Average loss so far : {ave_loss/cnt:3.6f}")
         print(cnt) # => 957264
-        os.makedirs(f"../trained/{today}", exist_ok=True)
-        torch.save(model.state_dict(), f"../trained/{today}/{model_name}_{e}.pt")
-        print("{:-^60}".format(""))
+        torch.save(model.state_dict(), f"../trained/bfm/{today}/{model_name}_{e}.pt")
+        print("{:-^60}".format("end"))
 
 if __name__=="__main__":
     main()
