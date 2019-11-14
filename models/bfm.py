@@ -351,7 +351,7 @@ def main():
     epochs = 5
 
     # Load trained parameters
-    loaded = True
+    loaded = False
     if loaded:
         model_path = "../trained/2019-11-08/BFM_minimize_real_faster_4.pt"
         model.load_state_dict(torch.load(model_path))
@@ -379,7 +379,7 @@ def main():
     print("{:-^60}".format(""))
 
 
-    for e in range(epochs, 50):
+    for e in range(epochs):
         print("{:-^60}".format(f"epoch {e}"))
         cnt = 0
         ave_loss = 0
@@ -397,8 +397,8 @@ def main():
             if cnt%2500==0:
                 print(f"Last loss : {loss.item():3.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
-                      f"# basket item : {x.sum().item()-2:3.0f}")
-                print(f"Average loss so far : {ave_loss/cnt:3.6f}")
+                      f"# basket item : {x.sum().item()-2:3.0f}    " \
+                      f"Average loss so far : {ave_loss/cnt:3.6f}")
         print(cnt) # => 957264
         torch.save(model.state_dict(), f"../trained/bfm/{today}/{model_name}_{e}.pt")
         print("{:-^60}".format("end"))
