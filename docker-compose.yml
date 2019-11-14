@@ -1,8 +1,9 @@
-version: '3'
+version: '3.7'
 services:
   python3:
     image: "ueno_experiment"
     container_name: "fm"
+    init: true
     user: "${USER_ID}:${GROUP_ID}"
     restart: always
     build: .
