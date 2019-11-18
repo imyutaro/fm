@@ -62,6 +62,8 @@ def multipro_hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     return hlu
 
 def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
+    from scipy.stats import rankdata
+
     beta -= 1
     rank_sum = 0
     cnt = 0
@@ -72,7 +74,7 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
             x, _ = x[0], x[1]
             target_idx = (x[n:n+m]==1).nonzero()
             # Predict
-            y = model.rank_list(x).tolist()
+            y = model.rank_list(x).numpy()
 
             """debug
             print(y[target_idx])
@@ -86,29 +88,55 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
                 exit()
             """
 
-            rank_dict = {idx : predict for idx, predict in enumerate(y)}
-            # Sort
-            sorted_rank = sorted(rank_dict.items(), key=lambda x:x[1])
-            # rank
-            rank = [i for i, v in enumerate(sorted_rank) if v[0]==target_idx][0]
+            rank = rankdata(-y, method="min")[target_idx]
 
             # Summation
             rank_sum += 2**((1-rank)/beta)
 
-    hlu = (C*rank_sum)/n_test
-    print("Finish cal")
-    return hlu
+    result = (C*rank_sum)/n_test
+
+    return result
 
 def r_at_n(test, n_test, model, itemset, n, m, rank=10):
-    pass
+    from scipy.stats import rankdata
+
+    result = 0.0
+    with torch.no_grad():
+        # for x in tqdm(test, total=n_test):
+        for x in test:
+            cnt += 1
+            x, _ = x[0], x[1]
+            target_idx = (x[n:n+m]==1).nonzero()
+            # Predict
+            y = model.rank_list(x).numpy()
+
+            rank = rankdata(-y, method="min")[target_idx]
+            if rank<11:
+                result+=1
+
+    result/=n_test
+
+    return result
 
 def main():
     from tmp_dataloader import Data
     from models import bfm
 
+    # choose 0--11
+    path = ["./trained/wrong/slow/BFM.pt", \
+            "./trained/wrong/slow/BFM_alldelta1.pt", \
+            "./trained/wrong/slow/BFM_minimize.pt", \
+            "./trained/wrong/slow/BFM_nomalize_minimize_1.pt", \
+            "./trained/wrong/2019-11-10/BFM_minimize_real_faster_10.pt", \
+            "./trained/bfm/2019-11-08/slow/BFM_minimize_faster_0.pt", \
+            "./trained/bfm/2019-11-08/BFM_4.pt", \
+            "./trained/bfm/2019-11-12/BFM_17.pt", \
+            "./trained/bfm/2019-11-14/BFM_no_l2_2.pt", \
+            "./trained/bfm/2019-11-14/BFM_no_l2_4.pt", \
+            "./trained/bfm/2019-11-15/BFM_norm_2.pt", \
+            "./trained/bfm/2019-11-15/BFM_norm_4.pt"]
+
     ds = Data(root_dir="./data/ta_feng/")
-    train, test, valid = ds.get_data()
-    n_test = ds.n_test
     itemset = ds.itemset
 
     #load network
@@ -116,17 +144,17 @@ def main():
     m = len(ds.itemset)
     k = 32
     model = bfm.BFM(n, m, k)
-    path = ["./trained/BFM.pt", \
-            "./trained/BFM_alldelta1.pt", \
-            "./trained/BFM_minimize.pt", \
-            "./trained/BFM_nomalize_minimize_1.pt"]
 
-    model_path = path[3]
-    print(f"{model_path:-^60}")
-    model.load_state_dict(torch.load(model_path))
+    for model_path in path:
+        # reset test dataset
+        _ , test, _ = ds.get_data()
+        n_test = ds.n_test
+        print(f"{model_path:-^60}")
+        model.load_state_dict(torch.load(model_path))
 
-    result = hlu(test, n_test, model, itemset, n, m)
-    print(result)
+        result = hlu(test, n_test, model, itemset, n, m)
+        print(result)
+        print("{:-^60}".format(""))
 
 if __name__=="__main__":
     main()
