@@ -107,7 +107,6 @@ class BFM(nn.Module):
         # Target item & basket items relation
         b_vecs = b_vecs.squeeze()
         t_b = torch.mm(t_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
-        # t_b /= n_b
         """
         # for jit compiling
         t_b = torch.mm(t_vec, torch.t(b_vecs[0]))
@@ -130,7 +129,6 @@ class BFM(nn.Module):
                 bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
             else:
                 bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
-        # bs /= n_b
         """
         # for jit compiling
         bs = torch.mm(b_vecs[0], torch.t(b_vecs[1]))
@@ -143,7 +141,6 @@ class BFM(nn.Module):
 
         # User & basket items relation
         u_b = torch.mm(u_vec, b_vecs.t()).sum(dim=-1, keepdim=True)
-        # u_b /= n_b
         """
         # for jit compiling
         u_b = torch.mm(u_vec, torch.t(b_vecs[0]))
@@ -152,6 +149,13 @@ class BFM(nn.Module):
                 u_b += torch.mm(u_vec, torch.t(b_vecs[i]))
         u_b /= n_b
         """
+
+        # Normalize
+        norm = True
+        if norm:
+            t_b /= n_b
+            bs /= n_b
+            u_b /= n_b
 
         # Output
         y = self.w_0 + \
@@ -285,12 +289,9 @@ def main():
     weight_decay=0.01
 
     model = BFM(n, m, k, gamma, alpha)
-    criterion = nn.BCELoss()
-    # criterion = nn.NLLLoss()
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    # optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.01)
     optimizer = optim.SGD(model.parameters(), \
                           lr=lr, \
                           momentum=momentum, \
@@ -301,25 +302,6 @@ def main():
     # x, label = x[0], x[1]
     # traced = torch.jit.trace(model, example_inputs=(x, label, torch.tensor([1.])))
     # print(traced.code)
-
-    """
-    x = next(train)
-    x, label = x[0], x[1]
-    loss = model(x, delta=label, pmi=1)
-
-    train, test, valid = ds.get_data()
-    model.load_state_dict(torch.load("../trained/BFM_nomalize_minimize_3.pt"))
-    x = next(train)
-    x, label = x[0], x[1]
-    loss = model(x, delta=label, pmi=1)
-
-    train, test, valid = ds.get_data()
-    model.load_state_dict(torch.load("../trained/BFM_nomalize_minimize_1.pt"))
-    x = next(train)
-    x, label = x[0], x[1]
-    loss = model(x, delta=label, pmi=1)
-    exit()
-    """
 
     """
     cnt = 0
@@ -347,13 +329,13 @@ def main():
     today = datetime.date.today()
     # saved directory
     os.makedirs(f"../trained/bfm/{today}", exist_ok=True)
-    model_name = "BFM_minimize_real_faster"
-    epochs = 5
+    model_name = "BFM_norm"
+    epochs = 21
 
     # Load trained parameters
     loaded = False
     if loaded:
-        model_path = "../trained/2019-11-08/BFM_minimize_real_faster_4.pt"
+        model_path = "../trained/2019-11-08/BFM_4.pt"
         model.load_state_dict(torch.load(model_path))
         epochs = 5
 
