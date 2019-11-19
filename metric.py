@@ -70,13 +70,13 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
-            cnt += 1
             x, _ = x[0], x[1]
             target_idx = (x[n:n+m]==1).nonzero()
             # Predict
             y = model.rank_list(x).numpy()
 
             """debug
+            cnt += 1
             print(y[target_idx])
             # _ = [print(i) for i in y if i>y[target_idx]]
             num=0
@@ -104,7 +104,6 @@ def r_at_n(test, n_test, model, itemset, n, m, rank=10):
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
-            cnt += 1
             x, _ = x[0], x[1]
             target_idx = (x[n:n+m]==1).nonzero()
             # Predict
@@ -123,18 +122,15 @@ def main():
     from models import bfm
 
     # choose 0--11
-    path = ["./trained/wrong/slow/BFM.pt", \
-            "./trained/wrong/slow/BFM_alldelta1.pt", \
-            "./trained/wrong/slow/BFM_minimize.pt", \
-            "./trained/wrong/slow/BFM_nomalize_minimize_1.pt", \
-            "./trained/wrong/2019-11-10/BFM_minimize_real_faster_10.pt", \
-            "./trained/bfm/2019-11-08/slow/BFM_minimize_faster_0.pt", \
-            "./trained/bfm/2019-11-08/BFM_4.pt", \
+    path = ["./trained/bfm/2019-11-08/BFM_4.pt", \
             "./trained/bfm/2019-11-12/BFM_17.pt", \
             "./trained/bfm/2019-11-14/BFM_no_l2_2.pt", \
             "./trained/bfm/2019-11-14/BFM_no_l2_4.pt", \
             "./trained/bfm/2019-11-15/BFM_norm_2.pt", \
-            "./trained/bfm/2019-11-15/BFM_norm_4.pt"]
+            "./trained/bfm/2019-11-15/BFM_norm_4.pt", \
+            "./trained/bfm/2019-11-19/BFM_norm_1.pt", \
+            "./trained/bfm/2019-11-19/BFM_norm_4.pt", \
+            "./trained/bfm/2019-11-19/BFM_norm_5.pt"]
 
     ds = Data(root_dir="./data/ta_feng/")
     itemset = ds.itemset
@@ -152,7 +148,8 @@ def main():
         print(f"{model_path:-^60}")
         model.load_state_dict(torch.load(model_path))
 
-        result = hlu(test, n_test, model, itemset, n, m)
+        # result = hlu(test, n_test, model, itemset, n, m)
+        result = r_at_n(test, n_test, model, itemset, n, m)
         print(result)
         print("{:-^60}".format(""))
 
