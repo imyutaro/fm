@@ -1,84 +1,200 @@
-import os
-import math
+import random
 import pickle
-import numpy as np
-
 import torch
-from torch.utils.data import Dataset, DataLoader, IterableDataset
+import torch.nn.functional as F
 
-class BFM_Dataset(IterableDataset):
-    """
-    Load and convert dataset from tuple to pytorch tensor
-    for basket factorization machine.
+# for reproducibility
+seed = 1234
+def seed_everything(seed=1234):
+    # os.environ['PYTHONHASHSEED'] = str(seed)
+    # np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+seed_everything(seed)
 
-    Variables ----------
-    --------------------
-    """
-
-    def __init__(self, filename="train.pkl", root_dir="./data/ta_feng/", seed=1234):
-        super(BFM_Dataset).__init__()
+class Data():
+    def __init__(self, filename="transaction.dat", root_dir="../data/ta_feng/"):
         self.root_dir = root_dir
-        self.filepath = os.path.join(self.root_dir, filename)
 
-        f = open(self.filepath, "rb")
-        self.data = pickle.load(f)
+        f = open(self.root_dir+filename, "rb")
+        data = pickle.load(f)
 
-        # Shuffled by myself but IterableDataset has shuffle option,
-        # so we don't need shuffle by myself.
-        # data = random.Random(seed).sample(data, len(data))
+        self.usrset, self.itemset = self._uiset(data)
 
-    def __iter__(self):
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info is None:
-            return iter()
-        else:
-            per_worker = len(data) // batch_size
-            worker_id = worker_info.id
-            t = convert(self.data)
-            return iter()
+        self.o_usr = self._usr2vec(self.usrset)
+        self.o_item = self._item2vec(self.itemset)
 
-    def __len__(self):
-        return len(self.data)
+    def _uiset(self, data):
+        """Make user and item set from data"""
+        usrset = set()
+        itemset = set()
+        for d in data:
+            usrset |= {d[0]}
+            itemset |= d[1]
+        return list(usrset), list(itemset)
 
-    def n_item(self):
-        prod_set = set()
-        for i in self.data:
-            prod_set |= i[1]
-        return len(prod_set)
+    def _usr2vec(self, usrset):
+        """Convert user list to one-hot vector"""
+        usrset.sort()
+        o_usr = F.one_hot(torch.arange(0, len(usrset))).float()
+        return o_usr
 
-    def __convert__(self, data):
-        # Convert tuple to torch tensor.
-        train_input = []
+    def _item2vec(self, itemset):
+        """Convert item list to one-hot vector"""
+        itemset.sort()
+        o_item = F.one_hot(torch.arange(0, len(itemset))).float()
+        return o_item
 
-        for d in train:
+    def _train(self):
+        f = open(self.root_dir+"train.pkl","rb")
+        train = pickle.load(f)
+
+        if type(train) is dict:
+            train = [(u, list(t), 1) for u, ts in train.items() for t in ts]
+        self.n_train = len(train)
+
+        return train
+
+    def _neg_train(self):
+        f = open(self.root_dir+"negative_sample.pkl","rb")
+        neg_train = pickle.load(f)
+        if type(neg_train) is dict:
+            neg_train = [(u, list(t), -1) for u, ts in neg_train.items() for t in ts]
+        self.n_neg = len(neg_train)
+
+        return neg_train
+
+
+    def _test(self):
+        f = open(self.root_dir+"test.pkl","rb")
+        test = pickle.load(f)
+
+        assert type(test) is dict, "pickle data must be dict"
+
+        # test = [(u, list(t), 1) for u, ts in test.items() for t in ts]
+        test_list = []
+        self.n_test = 0
+
+        for u, ts in test.items():
+            for t in ts:
+                test_list.append((u, list(t), 1))
+                self.n_test += len(t)
+
+        return test_list
+
+    def _valid(self):
+        f = open(self.root_dir+"validation.pkl","rb")
+        valid = pickle.load(f)
+
+        if type(valid) is dict:
+            valid = [(u, list(t), 1) for u, ts in valid.items() for t in ts]
+        self.n_valid = len(valid)
+
+        return valid
+
+    def _convert(self, base):
+
+        for d in base:
             usr = d[0]
             trans = d[1]
+            label = torch.tensor([[d[2]]], dtype=torch.float32)
+
+            usr = self.o_usr[self.usrset.index(usr)]
+
             basket = 0
-
-            usr = o_usr[usrset.index(usr)]
-
             for item in trans:
-                basket += o_item[itemset.index(item)]
+                basket += self.o_item[self.itemset.index(item)]
 
             # print(trans)
             # print("items:", len(trans), basket.sum())
             # print("general basket\n", (basket==1).nonzero())
             for item in trans:
                 # print(item)
-                target = o_item[itemset.index(item)]
+                target = self.o_item[self.itemset.index(item)]
                 t = basket-target
                 # print("target \n", (target==1).nonzero())
                 # print("t nonzero\n", (t==1).nonzero())
                 t = torch.cat((target, t))
                 # print(target.sum(), t[:target.shape[0]].sum(), t[target.shape[0]:].sum())
                 t = torch.cat((usr, t))
-                # train_input.append(t)
-                yield t
+                yield (t, label)
 
+    def get_data(self):
+        train = self._train()
+        neg_train = self._neg_train()
+
+        train = train + neg_train
+        for _ in range(22):
+            train = random.Random(seed).sample(train, len(train))
+        train = self._convert(train)
+
+        test = self._convert(self._test())
+        valid = self._convert(self._valid())
+
+        return train, test, valid
+
+def main():
+    import time
+
+    ds = Data(root_dir="./data/ta_feng/")
+    train, test, valid = ds.get_data()
+
+    # t1 = next(test)
+    # index = (t1[0]==1).nonzero()
+    # print(index)
+
+    # tmp = t1[0]
+    # print(tmp)
+
+    # basket_items = index[2:]
+    # basket_items = set(basket_items.view(-1).tolist())
+    # print(basket_items)
+
+    # tmp[index[2:]] = 0
+    # # index = (t1[0]==1).nonzero()
+    # # print(index)
+    # # print(type(index))
+
+    # new_idx = index[2:]
+    # print(new_idx+200)
+    # tmp[new_idx] = 1
+
+    #load network
+    from models import bfm
+    n = len(ds.usrset)
+    m = len(ds.itemset)
+    k = 32
+    model = bfm.BFM(n, m, k)
+    # choose 0--11
+    path = ["./trained/bfm/2019-11-08/BFM_2.pt", \
+            "./trained/bfm/2019-11-12/BFM_17.pt", \
+            "./trained/bfm/2019-11-14/BFM_no_l2_2.pt", \
+            "./trained/bfm/2019-11-14/BFM_no_l2_4.pt", \
+            "./trained/bfm/2019-11-15/BFM_norm_2.pt", \
+            "./trained/bfm/2019-11-15/BFM_norm_4.pt"]
+
+    model_path = path[7]
+    # model_path = path[6]
+    print(f"{model_path:-^60}")
+    model.load_state_dict(torch.load(model_path))
+    # print("output :", model(t1[0], t1[1], pmi=1))
+
+    cnt = 0
+    from scipy.stats import rankdata
+    for i in test:
+        if cnt==50: break
+        with torch.no_grad():
+            print(f"\nLabel     : {i[1]}")
+            print("fm output :", model.fm(i[0]))
+            print("Loss      :", model(i[0], i[1], pmi=1))
+            x, _ = i[0], i[1]
+            target_idx = (x[n:n+m]==1).nonzero()
+            y = model.rank_list(x).numpy()
+            rank = rankdata(-y, method="min")[target_idx]
+            print("Rank      :", rank)
+        cnt+=1
 
 if __name__=="__main__":
-    ds = BFM_Dataset()
-
-    data = DataLoader(ds, num_workers=20)
-    print(data)
-
+    main()
