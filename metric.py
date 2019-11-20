@@ -67,6 +67,7 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     beta -= 1
     rank_sum = 0
     cnt = 0
+    r_result = 0
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
@@ -93,9 +94,13 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
             # Summation
             rank_sum += 2**((1-rank)/beta)
 
-    result = (C*rank_sum)/n_test
+            if rank<11:
+                r_result+=1
 
-    return result
+    result = (C*rank_sum)/n_test
+    r_result/=n_test
+
+    return result, r_result
 
 def r_at_n(test, n_test, model, itemset, n, m, rank=10):
     from scipy.stats import rankdata
@@ -118,10 +123,10 @@ def r_at_n(test, n_test, model, itemset, n, m, rank=10):
     return result
 
 def main():
-    from tmp_dataloader import Data
+    from dataloader import Data
     from models import bfm
 
-    # choose 0--11
+    # choose 0--8
     path = ["./trained/bfm/2019-11-08/BFM_4.pt", \
             "./trained/bfm/2019-11-12/BFM_17.pt", \
             "./trained/bfm/2019-11-14/BFM_no_l2_2.pt", \
@@ -131,6 +136,11 @@ def main():
             "./trained/bfm/2019-11-19/BFM_norm_1.pt", \
             "./trained/bfm/2019-11-19/BFM_norm_4.pt", \
             "./trained/bfm/2019-11-19/BFM_norm_5.pt"]
+
+    path = ["./trained/abfm/2019-11-19/ABFM_0.pt", \
+            "./trained/abfm/2019-11-19/ABFM_1.pt", \
+            "./trained/bfm/2019-11-19/BFM_norm_7.pt", \
+            "./trained/bfm/2019-11-19/BFM_norm_8.pt"]
 
     ds = Data(root_dir="./data/ta_feng/")
     itemset = ds.itemset
@@ -148,9 +158,10 @@ def main():
         print(f"{model_path:-^60}")
         model.load_state_dict(torch.load(model_path))
 
-        # result = hlu(test, n_test, model, itemset, n, m)
-        result = r_at_n(test, n_test, model, itemset, n, m)
-        print(result)
+        result, r_result = hlu(test, n_test, model, itemset, n, m)
+        # result = r_at_n(test, n_test, model, itemset, n, m)
+        print(f"HLU  : {result}")
+        print(f"R@10 : {r_result}")
         print("{:-^60}".format(""))
 
 if __name__=="__main__":

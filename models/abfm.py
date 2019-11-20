@@ -100,7 +100,7 @@ def main():
     import datetime
     from torch.utils.data import DataLoader
 
-    from tmp_dataloader import Data
+    from dataloader import Data
 
     ds = Data()
     train, test, valid = ds.get_data()
