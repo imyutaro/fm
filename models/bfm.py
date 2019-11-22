@@ -288,7 +288,9 @@ def main():
     momentum=0
     weight_decay=0.01
 
-    model = BFM(n, m, k, gamma, alpha)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = BFM(n, m, k, gamma, alpha).to(device=device)
+
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
@@ -368,7 +370,7 @@ def main():
         train, _, _ = ds.get_data()
         for x in train:
             optimizer.zero_grad()
-            x, label = x[0], x[1]
+            x, label = x[0].to(device), x[1].to(device)
             loss = model(x, delta=label, pmi=1)
             loss.backward()
             optimizer.step()

@@ -121,7 +121,9 @@ def main():
     momentum=0
     weight_decay=0.01
 
-    model = ABFM(n, m, k, gamma, alpha)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = ABFM(n, m, k, gamma, alpha).to(device=device)
+
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
@@ -172,7 +174,7 @@ def main():
         train, _, _ = ds.get_data()
         for x in train:
             optimizer.zero_grad()
-            x, label = x[0], x[1]
+            x, label = x[0].to(device), x[1].to(device)
             loss = model(x, delta=label, pmi=1)
             loss.backward()
             optimizer.step()
@@ -185,7 +187,7 @@ def main():
                       f"Label : {label.item():2.0f},   " \
                       f"# basket item : {x.sum().item()-2:3.0f}    " \
                       f"Average loss so far : {ave_loss/cnt:3.6f}")
-        print(cnt) # => 957264
+        # print(cnt) # => 957264
         torch.save(model.state_dict(), f"../trained/abfm/{today}/{model_name}_{e}.pt")
         print("{:-^60}".format("end"))
 

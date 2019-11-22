@@ -61,7 +61,7 @@ def multipro_hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     hlu = (C*rank_sum)/n_test
     return hlu
 
-def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
+def hlu(test, n_test, model, itemset, n, m, device, C=100, beta=5):
     from scipy.stats import rankdata
 
     beta -= 1
@@ -71,10 +71,10 @@ def hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
-            x, _ = x[0], x[1]
+            x, _ = x[0].to(device), x[1].to(device)
             target_idx = (x[n:n+m]==1).nonzero()
             # Predict
-            y = model.rank_list(x).numpy()
+            y = model.rank_list(x).cpu().numpy()
 
             """debug
             cnt += 1
@@ -124,7 +124,7 @@ def r_at_n(test, n_test, model, itemset, n, m, rank=10):
 
 def main():
     from dataloader import Data
-    from models import bfm
+    from models import bfm, abfm
 
     # choose 0--8
     path = ["./trained/bfm/2019-11-08/BFM_4.pt", \
@@ -142,6 +142,9 @@ def main():
             "./trained/bfm/2019-11-19/BFM_norm_7.pt", \
             "./trained/bfm/2019-11-19/BFM_norm_8.pt"]
 
+    path = ["./trained/abfm/2019-11-21/ABFM_2.pt", \
+            "./trained/abfm/2019-11-21/ABFM_3.pt"]
+
     ds = Data(root_dir="./data/ta_feng/")
     itemset = ds.itemset
 
@@ -149,7 +152,11 @@ def main():
     n = len(ds.usrset)
     m = len(ds.itemset)
     k = 32
-    model = bfm.BFM(n, m, k)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = abfm.ABFM(n, m, k).to(device=device)
+    # model = bfm.BFM(n, m, k).to(device=device)
+
 
     for model_path in path:
         # reset test dataset
@@ -158,7 +165,7 @@ def main():
         print(f"{model_path:-^60}")
         model.load_state_dict(torch.load(model_path))
 
-        result, r_result = hlu(test, n_test, model, itemset, n, m)
+        result, r_result = hlu(test, n_test, model, itemset, n, m, device)
         # result = r_at_n(test, n_test, model, itemset, n, m)
         print(f"HLU  : {result}")
         print(f"R@10 : {r_result}")
