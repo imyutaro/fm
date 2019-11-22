@@ -6,10 +6,21 @@ Paper: [Basket-Sensitive Personalized Item Recommendation](https://www.ijcai.org
 
 How to build a docker container.
 
+CPU ver with docker-compose
+
 ```bash
 # Building a container
 ./start.sh
 # Enter a docker container
 sudo docker exec -it fm zsh
+```
+
+GPU ver
+
+```bash
+# Building a container
+./start_gpu.sh
+# Enter a docker container
+sudo docker exec -it fm_gpu zsh
 ```
 
