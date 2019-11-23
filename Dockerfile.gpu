@@ -3,7 +3,7 @@ FROM pytorch/pytorch:1.3-cuda10.1-cudnn7-devel
 USER root
 
 RUN apt-get update
-# nodejs is needed for jupyter lab
+# jupyter lab needs nodejs
 RUN curl -sL https://deb.nodesource.com/setup_11.x | bash -
 RUN apt-get -y install locales nodejs \
     vim less \

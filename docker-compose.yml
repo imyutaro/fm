@@ -7,7 +7,7 @@ services:
     user: "${USER_ID}:${GROUP_ID}"
     restart: always
     build: .
-    working_dir: "/home/${USER_NAME}/fm/"
+    working_dir: "/home/${USER_NAME}/"
     tty: true
     volumes:
       - ./:/home/${USER_NAME}/fm/
