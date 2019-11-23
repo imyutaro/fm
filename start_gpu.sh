@@ -12,7 +12,7 @@ sudo docker run --gpus all \
                 --name $NAME \
                 --init \
                 -p $PORT:$PORT \
-                -v $PWD/:/home/$USER_NAME/$NAME/ \
+                -v $PWD/:/home/$USER_NAME/ \
                 -tid $NAME \
                 jupyter lab --no-browser --port=$PORT --ip=0.0.0.0
 
