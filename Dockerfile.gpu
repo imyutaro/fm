@@ -2,10 +2,10 @@ FROM pytorch/pytorch:1.3-cuda10.1-cudnn7-devel
 
 USER root
 
-RUN apt-get update
 # jupyter lab needs nodejs
 RUN curl -sL https://deb.nodesource.com/setup_11.x | bash -
-RUN apt-get -y install locales nodejs \
+RUN apt-get update && \
+    apt-get -y install locales nodejs \
     vim less \
     zsh git curl wget && \
     localedef -f UTF-8 -i en_US en_US.UTF-8
@@ -15,8 +15,8 @@ ENV LC_ALL en_US.UTF-8
 ENV TZ JST-9
 ENV TERM xterm
 
-RUN pip install --upgrade pip
-RUN pip install --upgrade setuptools
+RUN pip install --upgrade pip && \
+    pip install --upgrade setuptools
 
 ARG USER_NAME
 ARG USER_ID
