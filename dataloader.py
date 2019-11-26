@@ -59,9 +59,10 @@ class Data():
 
     def _neg_train(self, neg):
 
+        assert neg==1 or neg==2, "neg option has to be 1 or 2"
         if neg==2:
             f = open(self.root_dir+"negative_sample.pkl","rb")
-        if neg==1:
+        elif neg==1:
             f = open(self.root_dir+"negative_sample_few.pkl","rb")
 
         neg_train = pickle.load(f)
