@@ -12,7 +12,7 @@ def predict(x, idx, model):
 def wrapper_func(args):
     return predict(x=args[0], idx=args[1], model=args[2])
 
-def multipro_hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
+def multipro_hlu(test, n_test, model, n, m, C=100, beta=5):
     """
     target itemでfor文を回してscoreが高い順に並べる必要がある.
     one-hot ベースでやる(x[n:n+m]ベースで)
@@ -61,7 +61,7 @@ def multipro_hlu(test, n_test, model, itemset, n, m, C=100, beta=5):
     hlu = (C*rank_sum)/n_test
     return hlu
 
-def hlu(test, n_test, model, itemset, n, m, device, C=100, beta=5):
+def hlu(test, n_test, model, n, m, device, C=100, beta=5):
     from scipy.stats import rankdata
 
     beta -= 1
@@ -102,7 +102,7 @@ def hlu(test, n_test, model, itemset, n, m, device, C=100, beta=5):
 
     return result, r_result
 
-def r_at_n(test, n_test, model, itemset, n, m, rank=10):
+def r_at_n(test, n_test, model, n, m, rank=10):
     from scipy.stats import rankdata
 
     result = 0.0
@@ -123,27 +123,16 @@ def r_at_n(test, n_test, model, itemset, n, m, rank=10):
     return result
 
 def main():
+    import csv
+
     from dataloader import Data
-    from models import bfm, abfm
+    from models.bfm import BFM
+    from models.abfm import ABFM
 
-    # choose 0--8
-    path = ["./trained/bfm/2019-11-08/BFM_4.pt", \
-            "./trained/bfm/2019-11-12/BFM_17.pt", \
-            "./trained/bfm/2019-11-14/BFM_no_l2_2.pt", \
-            "./trained/bfm/2019-11-14/BFM_no_l2_4.pt", \
-            "./trained/bfm/2019-11-15/BFM_norm_2.pt", \
-            "./trained/bfm/2019-11-15/BFM_norm_4.pt", \
-            "./trained/bfm/2019-11-19/BFM_norm_1.pt", \
-            "./trained/bfm/2019-11-19/BFM_norm_4.pt", \
-            "./trained/bfm/2019-11-19/BFM_norm_5.pt"]
-
-    path = ["./trained/abfm/2019-11-19/ABFM_0.pt", \
-            "./trained/abfm/2019-11-19/ABFM_1.pt", \
-            "./trained/bfm/2019-11-19/BFM_norm_7.pt", \
-            "./trained/bfm/2019-11-19/BFM_norm_8.pt"]
-
-    path = ["./trained/abfm/2019-11-21/ABFM_2.pt", \
-            "./trained/abfm/2019-11-21/ABFM_3.pt"]
+    # model paths
+    with open("./path") as f:
+         paths = [row[0] for row in csv.reader(f, delimiter="\n")]
+    # paths = [paths[15]]
 
     ds = Data(root_dir="./data/ta_feng/")
     itemset = ds.itemset
@@ -154,19 +143,19 @@ def main():
     k = 32
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = abfm.ABFM(n, m, k).to(device=device)
-    # model = bfm.BFM(n, m, k).to(device=device)
+    model = ABFM(n, m, k).to(device=device)
+    # model = BFM(n, m, k).to(device=device)
 
 
-    for model_path in path:
+    for path in paths:
         # reset test dataset
         _ , test, _ = ds.get_data()
         n_test = ds.n_test
-        print(f"{model_path:-^60}")
-        model.load_state_dict(torch.load(model_path))
+        print(f"{path:-^60}")
+        model.load_state_dict(torch.load(path))
 
-        result, r_result = hlu(test, n_test, model, itemset, n, m, device)
-        # result = r_at_n(test, n_test, model, itemset, n, m)
+        result, r_result = hlu(test, n_test, model, n, m, device)
+        # result = r_at_n(test, n_test, model, n, m)
         print(f"HLU  : {result}")
         print(f"R@10 : {r_result}")
         print("{:-^60}".format(""))
