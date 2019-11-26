@@ -1,8 +1,8 @@
-#!/usr/bin/zsh
+#!/usr/bin/zsh -e
 
 USER_NAME=docker
-NAME=fm_gpu
-PORT=9999
+NAME=${NAME:-"fm_gpu"}
+PORT=${PORT:-8888}
 sudo docker build --build-arg USER_ID=${UID} \
                   --build-arg USER_NAME=$USER_NAME \
                   --build-arg NAME=$NAME \
