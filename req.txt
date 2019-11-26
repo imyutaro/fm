@@ -1,8 +1,8 @@
-jupyter
-jupyterlab
-tqdm
-torch
-numpy
-pandas
-scikit-learn
-matplotlib
+jupyter==1.0.0
+jupyterlab==1.2.3
+tqdm==4.32.1
+torch==1.3.0
+numpy==1.17.2
+pandas==0.25.3
+scikit-learn==0.21.3
+matplotlib==3.1.2
