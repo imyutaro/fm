@@ -57,8 +57,13 @@ class Data():
 
         return train
 
-    def _neg_train(self):
-        f = open(self.root_dir+"negative_sample.pkl","rb")
+    def _neg_train(self, neg):
+
+        if neg==2:
+            f = open(self.root_dir+"negative_sample.pkl","rb")
+        if neg==1:
+            f = open(self.root_dir+"negative_sample_few.pkl","rb")
+
         neg_train = pickle.load(f)
         if type(neg_train) is dict:
             neg_train = [(u, list(t), -1) for u, ts in neg_train.items() for t in ts]
@@ -121,11 +126,14 @@ class Data():
                 t = torch.cat((usr, t))
                 yield (t, label)
 
-    def get_data(self):
+    def get_data(self, neg=2):
+        """neg : you can set how larger negative sample you use"""
         train = self._train()
-        neg_train = self._neg_train()
 
-        train = train + neg_train
+        if neg:
+            neg_train = self._neg_train(neg)
+            train = train + neg_train
+
         for _ in range(22):
             train = random.Random(seed).sample(train, len(train))
         train = self._convert(train)
