@@ -87,13 +87,13 @@ class ABFM(BFM):
         #     self.gamma[3]*u_b
 
         if debug:
-            print(f"u_t : {u_t.item()}\n" \
-                  f"t_b : {t_b.item()}\n" \
-                  f"bs  : {bs.item()}\n" \
-                  f"u_b : {u_b.item()}\n" \
-                  # f"w_0 : {self.w_0}\n"
-                  f"bias: {bias.item()}\n" \
-                  f"n_b : {n_b}")
+            print(f"u_t   : {u_t.item():>8.5f}\n" \
+                  f"t_b   : {t_b.item():>8.5f}\n" \
+                  f"bs    : {bs.item():>8.5f}\n" \
+                  f"u_b   : {u_b.item():>8.5f}\n" \
+                  f"bias  : {bias.item():>8.5f}\n" \
+                  f"w_0   : {self.w_0.item():>8.5f}\n"
+                  f"n_b   : {n_b}")
             # print(f"u_t : {u_t.shape}\n" \
             #       f"t_b : {t_b.shape}\n" \
             #       f"bs  : {bs.shape}\n" \
@@ -101,6 +101,67 @@ class ABFM(BFM):
             #       f"w_0 : {self.w_0.shape}\n"
             #       f"bias: {bias.shape}\n" \
             #       f"y   : {y.shape}")
+
+        return y
+
+    def rank_list(self, x):
+
+        # set 1 to all target items
+        x[self.n:self.n+self.m] = 1
+        # Bias for each users
+        u_bias = torch.mm(x[:self.n].view(1,-1), self.w_bias[:self.n])
+        # bias for target items
+        t_bias = self.w_bias[self.n:self.n+self.m]
+        # bias for basket items
+        b_bias = torch.mm(x[self.n+self.m:self.n+2*self.m].view(1,-1), self.w_bias[self.n+self.m:self.n+2*self.m])
+        # all bias
+        bias = (u_bias + t_bias + b_bias).squeeze()
+
+        # maybe have to extend dim
+        x = x.view((1, x.shape[0]))
+
+        # User latent vec
+        u_vec = torch.mm(x[:,:self.n], self.u_V)
+
+        # Target item latent vec
+        t_vec = self.t_V.view(self.t_V.shape[0], 1, self.t_V.shape[1])
+
+        # Basket items latent vecs and Basket items indices
+        index = (x[0,self.n+self.m:self.n+2*self.m]==1).nonzero()
+        b_vecs = torch.squeeze(self.b_V[index,:])
+        # The number of basket items
+        n_b = list(index.shape)[0]
+
+        # User & target item relation with attention
+        u_b = torch.sum(u_vec * b_vecs, dim=-1)
+        a_u_b = self.softmax(u_b).unsqueeze(-1) * b_vecs
+        u_b = (a_u_b * t_vec).sum(-1).sum(-1)
+
+        # Target item & basket items relation with attention
+        t_b = torch.sum(t_vec * b_vecs, dim=-1)
+        a_t_b = self.softmax(t_b).unsqueeze(-1) * b_vecs
+        t_b = (a_t_b * t_vec).sum(-1).sum(-1)
+
+        # Among basket items relation
+        bs = None
+        for i in range(n_b):
+            if bs is None:
+                bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
+            else:
+                bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
+
+        # User & basket items relation
+        a_u_b = self.softmax(torch.mm(u_vec, b_vecs.t()))
+        a_u_b = b_vecs * a_u_b.t()
+        u_b = torch.mm(a_u_b, t_vec.t()).sum(dim=0, keepdim=True)
+
+        # Output
+        y = self.w_0 + \
+            bias + \
+            self.gamma[0]*u_t + \
+            self.gamma[1]*t_b + \
+            self.gamma[2]*bs + \
+            self.gamma[3]*u_b
 
         return y
 
@@ -131,6 +192,9 @@ def main():
     momentum=0
     weight_decay=0.01
 
+    epochs = 21
+    neg = 0
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = ABFM(n, m, k, gamma, alpha).to(device=device)
 
@@ -148,7 +212,6 @@ def main():
     save_dir = f"../trained/abfm/{today}/{c_time}"
     os.makedirs(save_dir, exist_ok=True)
     model_name = "ABFM"
-    epochs = 21
 
     # Load trained parameters
     loaded = False
@@ -161,7 +224,8 @@ def main():
     # Print Information
     print("{:-^60}".format("Data stat"))
     print(f"# User        : {n}\n" \
-          f"# Item        : {m}")
+          f"# Item        : {m}\n" \
+          f"Neg sample    : {neg}\n")
     print("{:-^60}".format("Optim status"))
     print(f"Optimizer     : {optimizer}\n" \
           f"Learning rate : {lr}\n" \
@@ -177,7 +241,6 @@ def main():
     if loaded:
         print(f"Learned model : {model_path}")
     print("{:-^60}".format("Description"))
-    # print("Remove global bias w_0 and bias term")
     print("Without nagative samples")
     print("{:-^60}".format(""))
 
@@ -186,7 +249,7 @@ def main():
         print("{:-^60}".format(f"epoch {e}"))
         cnt = 0
         ave_loss = 0
-        train, _, _ = ds.get_data()
+        train, _, _ = ds.get_data(neg=neg)
         for x in train:
             optimizer.zero_grad()
             x, label = x[0].to(device), x[1].to(device)
@@ -200,8 +263,8 @@ def main():
             if cnt%2500==0:
                 print(f"Last loss : {loss.item():>9.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
-                      f"# basket item : {x.sum().item()-2:3.0f}    " \
-                      f"Average loss so far : {ave_loss/cnt:3.6f}")
+                      f"# basket item : {x.sum().item()-2:3.0f},   " \
+                      f"Average loss so far : {ave_loss/cnt:>9.6f}")
         # print(cnt) # => 957264
         torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
         print("{:-^60}".format("end"))
