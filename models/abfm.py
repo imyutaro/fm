@@ -4,7 +4,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-import bfm
+# Bad solution
+# TODO: Fix this
+import sys
+sys.path.append("../")
+from models.bfm import BFM
 
 # for reproducibility
 def seed_everything(seed=1234):
@@ -17,14 +21,14 @@ def seed_everything(seed=1234):
 seed=1234
 seed_everything(seed)
 
-class ABFM(bfm.BFM):
+class ABFM(BFM):
     def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0):
         super(ABFM, self).__init__(n, m, k, gamma=[1,1,1,1], alpha=0.0)
 
-        # add softmax functin
+        # add softmax functin for attention
         self.softmax = nn.Softmax(dim=-1)
 
-    def fm(self, x):
+    def fm(self, x, debug=False):
         # transaction vec whose elements are only 0 or 1.
         x = x.view((1, x.shape[0]))
 
@@ -50,6 +54,8 @@ class ABFM(bfm.BFM):
         b_vecs = b_vecs.squeeze()
         t_b = torch.mm(t_vec, b_vecs.t())
         a_t_b = self.softmax(t_b)
+        # print(f"m t_b : {t_b}")
+        # print(f"a t_b : {a_t_b}")
         t_b = torch.mm(a_t_b, t_b.t()).sum(dim=-1, keepdim=True)
 
         # Among basket items relation
@@ -67,6 +73,8 @@ class ABFM(bfm.BFM):
         # User & basket items relation with attention
         u_b = torch.mm(u_vec, b_vecs.t())
         a_u_b = self.softmax(u_b)
+        # print(f"m u_b : {u_b}")
+        # print(f"a u_b : {a_u_b}")
         u_b = torch.mm(a_u_b, u_b.t()).sum(dim=-1, keepdim=True)
 
         # Output
@@ -76,21 +84,26 @@ class ABFM(bfm.BFM):
             self.gamma[1]*t_b + \
             self.gamma[2]*bs + \
             self.gamma[3]*u_b
+        # y = self.gamma[0]*u_t + \
+        #     self.gamma[1]*t_b + \
+        #     self.gamma[2]*bs + \
+        #     self.gamma[3]*u_b
 
-        # print(f"u_t : {u_t}\n" \
-        #       f"t_b : {t_b}\n" \
-        #       f"bs  : {bs}\n" \
-        #       f"u_b : {u_b}\n" \
-        #       f"w_0 : {self.w_0}\n"
-        #       f"bias: {bias}\n" \
-        #       f"y   : {y}")
-        # print(f"u_t : {u_t.shape}\n" \
-        #       f"t_b : {t_b.shape}\n" \
-        #       f"bs  : {bs.shape}\n" \
-        #       f"u_b : {u_b.shape}\n" \
-        #       f"w_0 : {self.w_0.shape}\n"
-        #       f"bias: {bias.shape}\n" \
-        #       f"y   : {y.shape}")
+        if debug:
+            print(f"u_t : {u_t.item()}\n" \
+                  f"t_b : {t_b.item()}\n" \
+                  f"bs  : {bs.item()}\n" \
+                  f"u_b : {u_b.item()}\n" \
+                  # f"w_0 : {self.w_0}\n"
+                  f"bias: {bias.item()}\n" \
+                  f"n_b : {n_b}")
+            # print(f"u_t : {u_t.shape}\n" \
+            #       f"t_b : {t_b.shape}\n" \
+            #       f"bs  : {bs.shape}\n" \
+            #       f"u_b : {u_b.shape}\n" \
+            #       f"w_0 : {self.w_0.shape}\n"
+            #       f"bias: {bias.shape}\n" \
+            #       f"y   : {y.shape}")
 
         return y
 
@@ -132,9 +145,11 @@ def main():
                           momentum=momentum, \
                           weight_decay=weight_decay)
 
-    today = datetime.date.today()
     # Saved directory
-    os.makedirs(f"../trained/abfm/{today}", exist_ok=True)
+    today = datetime.date.today()
+    c_time = datetime.datetime.now().strftime("%H-%M-%S")
+    save_dir = f"../trained/abfm/{today}/{c_time}"
+    os.makedirs(save_dir, exist_ok=True)
     model_name = "ABFM"
     epochs = 21
 
@@ -164,6 +179,9 @@ def main():
           f"Loaded        : {loaded}")
     if loaded:
         print(f"Learned model : {model_path}")
+    print("{:-^60}".format("Description"))
+    # print("Remove global bias w_0 and bias term")
+    print("Without nagative samples")
     print("{:-^60}".format(""))
 
 
@@ -188,7 +206,7 @@ def main():
                       f"# basket item : {x.sum().item()-2:3.0f}    " \
                       f"Average loss so far : {ave_loss/cnt:3.6f}")
         # print(cnt) # => 957264
-        torch.save(model.state_dict(), f"../trained/abfm/{today}/{model_name}_{e}.pt")
+        torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
         print("{:-^60}".format("end"))
 
 if __name__=="__main__":
