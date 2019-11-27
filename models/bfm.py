@@ -35,7 +35,7 @@ class BFM(nn.Module):
     alpha:  alpha in eq11. If alpha is 0, model is BFM.
     --------------------
     """
-    def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0):
+    def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0, norm=False):
         super(BFM, self).__init__()
         # parameters
         self.n = n
@@ -61,6 +61,7 @@ class BFM(nn.Module):
         # hyper parameter
         self.alpha = alpha
         self.gamma = gamma
+        self.norm = norm
 
     def forward(self, x, delta, pmi):
         """
@@ -82,7 +83,7 @@ class BFM(nn.Module):
 
         return y
 
-    def fm(self, x):
+    def fm(self, x, debug=False):
         # transaction vec whose elements are only 0 or 1.
         x = x.view((1, x.shape[0]))
 
@@ -151,8 +152,7 @@ class BFM(nn.Module):
         """
 
         # Normalize
-        norm = True
-        if norm:
+        if self.norm:
             t_b /= n_b
             bs /= n_b
             u_b /= n_b
@@ -165,20 +165,21 @@ class BFM(nn.Module):
             self.gamma[2]*bs + \
             self.gamma[3]*u_b
 
-        # print(f"u_t : {u_t}\n" \
-        #       f"t_b : {t_b}\n" \
-        #       f"bs  : {bs}\n" \
-        #       f"u_b : {u_b}\n" \
-        #       f"w_0 : {self.w_0}\n"
-        #       f"bias: {bias}\n" \
-        #       f"y   : {y}")
-        # print(f"u_t : {u_t.shape}\n" \
-        #       f"t_b : {t_b.shape}\n" \
-        #       f"bs  : {bs.shape}\n" \
-        #       f"u_b : {u_b.shape}\n" \
-        #       f"w_0 : {self.w_0.shape}\n"
-        #       f"bias: {bias.shape}\n" \
-        #       f"y   : {y.shape}")
+        if debug:
+            print(f"u_t   : {u_t.item():>8.5f}\n" \
+                  f"t_b   : {t_b.item():>8.5f}\n" \
+                  f"bs    : {bs.item():>8.5f}\n" \
+                  f"u_b   : {u_b.item():>8.5f}\n" \
+                  f"bias  : {bias.item():>8.5f}\n" \
+                  f"w_0   : {self.w_0.item():>8.5f}\n"
+                  f"n_b   : {n_b}")
+            # print(f"u_t : {u_t.shape}\n" \
+            #       f"t_b : {t_b.shape}\n" \
+            #       f"bs  : {bs.shape}\n" \
+            #       f"u_b : {u_b.shape}\n" \
+            #       f"w_0 : {self.w_0.shape}\n"
+            #       f"bias: {bias.shape}\n" \
+            #       f"y   : {y.shape}")
 
         return y
 
@@ -228,7 +229,6 @@ class BFM(nn.Module):
 
         # Target item & basket items relation
         t_b = (t_vec * b_vecs).sum(-1).sum(-1)
-        t_b /= n_b
 
         # Among basket items relation
         bs = None
@@ -237,11 +237,14 @@ class BFM(nn.Module):
                 bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
             else:
                 bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
-        bs /= n_b
 
         # User & basket items relation
         u_b = torch.mm(u_vec, b_vecs.t()).sum()
-        u_b /= n_b
+
+        if self.norm:
+            t_b /= n_b
+            bs /= n_b
+            u_b /= n_b
 
         # Output
         y = self.w_0 + \
@@ -283,10 +286,14 @@ def main():
 
     gamma=[1,1,1,1]
     alpha=0.0
+    norm=False
 
     lr=0.0001
     momentum=0
     weight_decay=0.01
+
+    epochs = 21
+    neg = 2
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = BFM(n, m, k, gamma, alpha).to(device=device)
@@ -328,11 +335,12 @@ def main():
     torch.save(model.state_dict(), "../trained/BFM_alldelta1.pt")
     """
 
+    # Saved directory
     today = datetime.date.today()
-    # saved directory
-    os.makedirs(f"../trained/bfm/{today}", exist_ok=True)
-    model_name = "BFM_norm"
-    epochs = 21
+    c_time = datetime.datetime.now().strftime("%H-%M-%S")
+    save_dir = f"../trained/abfm/{today}/{c_time}"
+    os.makedirs(save_dir, exist_ok=True)
+    model_name = "BFM"
 
     # Load trained parameters
     loaded = False
@@ -345,7 +353,8 @@ def main():
     # Print Information
     print("{:-^60}".format("Data stat"))
     print(f"# User        : {n}\n" \
-          f"# Item        : {m}")
+          f"# Item        : {m}\n" \
+          f"Neg sample    : {neg}\n")
     print("{:-^60}".format("Optim status"))
     print(f"Optimizer     : {optimizer}\n" \
           f"Learning rate : {lr}\n" \
@@ -356,6 +365,7 @@ def main():
           f"Mid dim       : {k}\n" \
           f"Gamma         : {gamma}\n" \
           f"Alpha         : {alpha}\n" \
+          f"Normalize     : {norm}\n" \
           f"Epochs        : {epochs}\n" \
           f"Loaded        : {loaded}")
     if loaded:
@@ -367,7 +377,7 @@ def main():
         print("{:-^60}".format(f"epoch {e}"))
         cnt = 0
         ave_loss = 0
-        train, _, _ = ds.get_data()
+        train, _, _ = ds.get_data(neg=neg)
         for x in train:
             optimizer.zero_grad()
             x, label = x[0].to(device), x[1].to(device)
@@ -379,12 +389,12 @@ def main():
                 ave_loss += loss.item()
             cnt+=1
             if cnt%2500==0:
-                print(f"Last loss : {loss.item():3.6f} at {cnt:6d}, " \
+                print(f"Last loss : {loss.item():>9.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
-                      f"# basket item : {x.sum().item()-2:3.0f}    " \
-                      f"Average loss so far : {ave_loss/cnt:3.6f}")
-        print(cnt) # => 957264
-        torch.save(model.state_dict(), f"../trained/bfm/{today}/{model_name}_{e}.pt")
+                      f"# basket item : {x.sum().item()-2:3.0f},   " \
+                      f"Average loss so far : {ave_loss/cnt:>9.6f}")
+        # print(cnt) # => 957264
+        torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
         print("{:-^60}".format("end"))
 
 if __name__=="__main__":
