@@ -50,13 +50,19 @@ class ABFM(BFM):
         # User & target item relation
         u_t = torch.mm(u_vec, t_vec.t())
 
-        # Target item & basket items relation with attention
         b_vecs = b_vecs.squeeze()
-        t_b = torch.mm(t_vec, b_vecs.t())
-        a_t_b = self.softmax(t_b)
-        # print(f"m t_b : {t_b}")
-        # print(f"a t_b : {a_t_b}")
-        t_b = torch.mm(a_t_b, t_b.t()).sum(dim=-1, keepdim=True)
+
+        # Target item & basket items relation with attention
+        a_t_b = self.softmax(torch.mm(t_vec, b_vecs.t()))
+        # print(f"----Basket items----\n{b_vecs}\n")
+        # print(f"----Attention values----\n{a_t_b}")
+        a_t_b = b_vecs * a_t_b.t()
+        # print(f"----After attention----\n{a_t_b}")
+        # print(f"----After attention shape----\n{a_t_b.shape}")
+        # print(f"----Target item shape----\n{t_vec.shape}")
+        # print(f"----Target item----\n{t_vec}")
+        t_b = torch.mm(a_t_b, t_vec.t()).sum(dim=0, keepdim=True)
+        # print(f"----Target and Basket relation----\n{t_b}")
 
         # Among basket items relation
         # faster (maybe 2x faster)
@@ -71,11 +77,13 @@ class ABFM(BFM):
                 bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
 
         # User & basket items relation with attention
-        u_b = torch.mm(u_vec, b_vecs.t())
-        a_u_b = self.softmax(u_b)
-        # print(f"m u_b : {u_b}")
-        # print(f"a u_b : {a_u_b}")
-        u_b = torch.mm(a_u_b, u_b.t()).sum(dim=-1, keepdim=True)
+        a_u_b = self.softmax(torch.mm(u_vec, b_vecs.t()))
+        # print(f"----Basket items----\n{b_vecs}\n")
+        # print(f"----Attention values----\n{a_u_b}")
+        a_u_b = b_vecs * a_u_b.t()
+        # print(f"----After attention----\n{a_u_b}")
+        u_b = torch.mm(a_u_b, t_vec.t()).sum(dim=0, keepdim=True)
+        # print(f"----Target and Basket relation----\n{u_b}")
 
         # Output
         y = self.w_0 + \
@@ -149,7 +157,7 @@ def main():
     today = datetime.date.today()
     c_time = datetime.datetime.now().strftime("%H-%M-%S")
     save_dir = f"../trained/abfm/{today}/{c_time}"
-    os.makedirs(save_dir, exist_ok=True)
+    # os.makedirs(save_dir, exist_ok=True)
     model_name = "ABFM"
     epochs = 21
 
@@ -201,7 +209,7 @@ def main():
                 ave_loss += loss.item()
             cnt+=1
             if cnt%2500==0:
-                print(f"Last loss : {loss.item():3.6f} at {cnt:6d}, " \
+                print(f"Last loss : {loss.item():>9.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
                       f"# basket item : {x.sum().item()-2:3.0f}    " \
                       f"Average loss so far : {ave_loss/cnt:3.6f}")
