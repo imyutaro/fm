@@ -132,10 +132,8 @@ class ABFM(BFM):
         # The number of basket items
         n_b = list(index.shape)[0]
 
-        # User & target item relation with attention
-        u_b = torch.sum(u_vec * b_vecs, dim=-1)
-        a_u_b = self.softmax(u_b).unsqueeze(-1) * b_vecs
-        u_b = (a_u_b * t_vec).sum(-1).sum(-1)
+        # User & target item relation
+        u_t = (u_vec * t_vec).sum(-1).sum(-1)
 
         # Target item & basket items relation with attention
         t_b = torch.sum(t_vec * b_vecs, dim=-1)
@@ -150,10 +148,11 @@ class ABFM(BFM):
             else:
                 bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
 
-        # User & basket items relation
-        a_u_b = self.softmax(torch.mm(u_vec, b_vecs.t()))
-        a_u_b = b_vecs * a_u_b.t()
-        u_b = torch.mm(a_u_b, t_vec.t()).sum(dim=0, keepdim=True)
+        # User & basket items relation with attention
+        u_b = torch.sum(u_vec * b_vecs, dim=-1)
+        a_u_b = self.softmax(u_b).unsqueeze(-1) * b_vecs
+        u_b = (a_u_b * t_vec).sum(-1).sum(-1)
+
 
         # Output
         y = self.w_0 + \
