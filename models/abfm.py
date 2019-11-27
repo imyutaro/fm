@@ -54,15 +54,8 @@ class ABFM(BFM):
 
         # Target item & basket items relation with attention
         a_t_b = self.softmax(torch.mm(t_vec, b_vecs.t()))
-        # print(f"----Basket items----\n{b_vecs}\n")
-        # print(f"----Attention values----\n{a_t_b}")
         a_t_b = b_vecs * a_t_b.t()
-        # print(f"----After attention----\n{a_t_b}")
-        # print(f"----After attention shape----\n{a_t_b.shape}")
-        # print(f"----Target item shape----\n{t_vec.shape}")
-        # print(f"----Target item----\n{t_vec}")
         t_b = torch.mm(a_t_b, t_vec.t()).sum(dim=0, keepdim=True)
-        # print(f"----Target and Basket relation----\n{t_b}")
 
         # Among basket items relation
         # faster (maybe 2x faster)
@@ -78,12 +71,8 @@ class ABFM(BFM):
 
         # User & basket items relation with attention
         a_u_b = self.softmax(torch.mm(u_vec, b_vecs.t()))
-        # print(f"----Basket items----\n{b_vecs}\n")
-        # print(f"----Attention values----\n{a_u_b}")
         a_u_b = b_vecs * a_u_b.t()
-        # print(f"----After attention----\n{a_u_b}")
         u_b = torch.mm(a_u_b, t_vec.t()).sum(dim=0, keepdim=True)
-        # print(f"----Target and Basket relation----\n{u_b}")
 
         # Output
         y = self.w_0 + \
@@ -157,7 +146,7 @@ def main():
     today = datetime.date.today()
     c_time = datetime.datetime.now().strftime("%H-%M-%S")
     save_dir = f"../trained/abfm/{today}/{c_time}"
-    # os.makedirs(save_dir, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
     model_name = "ABFM"
     epochs = 21
 
