@@ -5,7 +5,10 @@ __pycache__/
 /data/ta_feng/*
 !/data/ta_feng/.gitkeep
 
+/trained/
 path
+hlu.txt
+r@n.txt
 
 tmp/
 tmp*/
