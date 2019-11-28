@@ -54,8 +54,8 @@ class ABFM(BFM):
 
         # Target item & basket items relation with attention
         a_t_b = self.softmax(torch.mm(t_vec, b_vecs.t()))
-        a_t_b = b_vecs * a_t_b.t()
-        t_b = torch.mm(a_t_b, t_vec.t()).sum(dim=0, keepdim=True)
+        t_b = b_vecs * a_t_b.t()
+        t_b = torch.mm(t_b, t_vec.t()).sum(dim=0, keepdim=True)
 
         # Among basket items relation
         # faster (maybe 2x faster)
@@ -71,8 +71,8 @@ class ABFM(BFM):
 
         # User & basket items relation with attention
         a_u_b = self.softmax(torch.mm(u_vec, b_vecs.t()))
-        a_u_b = b_vecs * a_u_b.t()
-        u_b = torch.mm(a_u_b, t_vec.t()).sum(dim=0, keepdim=True)
+        u_b = b_vecs * a_u_b.t()
+        u_b = torch.mm(u_b, t_vec.t()).sum(dim=0, keepdim=True)
 
         # Output
         y = self.w_0 + \
@@ -87,7 +87,9 @@ class ABFM(BFM):
         #     self.gamma[3]*u_b
 
         if debug:
-            print(f"u_t   : {u_t.item():>8.5f}\n" \
+            print(f"a_t_b : {a_t_b}\n" \
+                  f"a_u_b : {a_u_b}\n" \
+                  f"u_t   : {u_t.item():>8.5f}\n" \
                   f"t_b   : {t_b.item():>8.5f}\n" \
                   f"bs    : {bs.item():>8.5f}\n" \
                   f"u_b   : {u_b.item():>8.5f}\n" \
