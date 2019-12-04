@@ -68,6 +68,7 @@ def hlu(test, n_test, model, n, m, device, C=100, beta=5):
     rank_sum = 0
     cnt = 0
     r_result = 0
+    diversity = 0
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
@@ -89,7 +90,9 @@ def hlu(test, n_test, model, n, m, device, C=100, beta=5):
                 exit()
             """
 
-            rank = rankdata(-y, method="min")[target_idx]
+            rank = rankdata(-y, method="min")
+            diversity += len(set(rank))
+            rank = rank[target_idx]
 
             # Summation
             rank_sum += 2**((1-rank)/beta)
@@ -99,8 +102,9 @@ def hlu(test, n_test, model, n, m, device, C=100, beta=5):
 
     result = (C*rank_sum)/n_test
     r_result/=n_test
+    diversity/=n_test
 
-    return result, r_result
+    return result, r_result, diversity
 
 def r_at_n(test, n_test, model, n, m, rank=10):
     from scipy.stats import rankdata
@@ -154,10 +158,11 @@ def main():
         print(f"{path:-^60}")
         model.load_state_dict(torch.load(path))
 
-        result, r_result = hlu(test, n_test, model, n, m, device)
+        result, r_result, diversity = hlu(test, n_test, model, n, m, device)
         # result = r_at_n(test, n_test, model, n, m)
-        print(f"HLU  : {result}")
-        print(f"R@10 : {r_result}")
+        print(f"HLU       : {result}")
+        print(f"R@10      : {r_result}")
+        print(f"Diversity : {diversity}")
         print("{:-^60}".format(""))
 
 if __name__=="__main__":
