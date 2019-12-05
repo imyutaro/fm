@@ -35,11 +35,11 @@ class BFM(nn.Module):
     alpha:  alpha in eq11. If alpha is 0, model is BFM.
     --------------------
     """
-    def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0, norm=False):
+    def __init__(self, n_usr, n_itm, k, gamma=[1,1,1,1], alpha=0.0, norm=False):
         super(BFM, self).__init__()
         # parameters
-        self.n = n
-        self.m = m
+        self.n = n_usr
+        self.m = n_itm
         self.k = k
 
         # biases
@@ -50,9 +50,9 @@ class BFM(nn.Module):
         # self.u_V = nn.Parameter(torch.normal(0, 1, size=(n, k)))
         # self.t_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
         # self.b_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
-        self.u_V = nn.Parameter(torch.randn(n, k))
-        self.t_V = nn.Parameter(torch.randn(m, k))
-        self.b_V = nn.Parameter(torch.randn(m, k))
+        self.u_V = nn.Parameter(torch.randn(n_usr, k))
+        self.t_V = nn.Parameter(torch.randn(n_itm, k))
+        self.b_V = nn.Parameter(torch.randn(n_itm, k))
 
         # sigmoid
         # self.sigmoid = nn.Sigmoid()

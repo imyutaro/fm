@@ -22,10 +22,10 @@ seed=1234
 seed_everything(seed)
 
 class ABFM(BFM):
-    def __init__(self, n, m, k, gamma=[1,1,1,1], alpha=0.0):
-        super(ABFM, self).__init__(n, m, k, gamma=[1,1,1,1], alpha=0.0)
+    def __init__(self, n_usr, n_itm, k, gamma=[1,1,1,1], alpha=0.0):
+        super(ABFM, self).__init__(n_usr, n_itm, k, gamma=[1,1,1,1], alpha=0.0)
 
-        # add softmax functin for attention
+        # add softmax function for attention
         self.softmax = nn.Softmax(dim=-1)
 
     def fm(self, x, debug=False):
