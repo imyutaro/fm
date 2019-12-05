@@ -12,7 +12,7 @@ def predict(x, idx, model):
 def wrapper_func(args):
     return predict(x=args[0], idx=args[1], model=args[2])
 
-def multipro_hlu(test, n_test, model, n, m, C=100, beta=5):
+def multipro_hlu(test, n_test, model, n_usr, m, C=100, beta=5):
     """
     target itemでfor文を回してscoreが高い順に並べる必要がある.
     one-hot ベースでやる(x[n:n+m]ベースで)
@@ -36,12 +36,12 @@ def multipro_hlu(test, n_test, model, n, m, C=100, beta=5):
     with torch.no_grad():
         for x in tqdm(test, total=n_test):
             x, _ = x[0], x[1]
-            target_idx = (x[n:n+m]==1).nonzero()+n
-            x[n:n+m] = 0
+            target_idx = (x[n_usr:n_usr+n_itm]==1).nonzero()+n_usr
+            x[n_usr:n_usr+n_itm] = 0
 
             # multi-processing
             args = []
-            for idx in range(n, n+m):
+            for idx in range(n_usr, n_usr+n_itm):
                 args.append((x, idx, model))
             processes = max(1, multiprocessing.cpu_count()-1)
             p = multiprocessing.Pool(processes)
@@ -61,7 +61,7 @@ def multipro_hlu(test, n_test, model, n, m, C=100, beta=5):
     hlu = (C*rank_sum)/n_test
     return hlu
 
-def evaluate(test, n_test, model, n, m, device, C=100, beta=5, n_rank=10):
+def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10):
     from scipy.stats import rankdata
 
     beta -= 1
@@ -73,7 +73,7 @@ def evaluate(test, n_test, model, n, m, device, C=100, beta=5, n_rank=10):
         # for x in tqdm(test, total=n_test):
         for x in test:
             x, _ = x[0].to(device), x[1].to(device)
-            target_idx = (x[n:n+m]==1).nonzero()
+            target_idx = (x[n_usr:n_usr+n_itm]==1).nonzero()
             # Predict
             y = model.rank_list(x).cpu().numpy()
 
@@ -124,13 +124,13 @@ def main():
     itemset = ds.itemset
 
     #load network
-    n = len(ds.usrset)
-    m = len(ds.itemset)
+    n_usr = len(ds.usrset)
+    n_itm = len(ds.itemset)
     k = 32
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = ABFM(n, m, k).to(device=device)
-    # model = BFM(n, m, k).to(device=device)
+    model = ABFM(n_usr, n_itm, k).to(device=device)
+    # model = BFM(n_usr, n_itm, k).to(device=device)
 
 
     for path in paths:
@@ -140,7 +140,7 @@ def main():
         print(f"{path:-^60}")
         model.load_state_dict(torch.load(path))
 
-        result, r_result, diversity = evaluate(test, n_test, model, n, m, device)
+        result, r_result, diversity = evaluate(test, n_test, model, n_usr, n_itm, device)
         # result = r_at_n(test, n_test, model, n, m)
         print(f"HLU       : {result}")
         print(f"R@10      : {r_result}")
