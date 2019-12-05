@@ -61,7 +61,7 @@ def multipro_hlu(test, n_test, model, n, m, C=100, beta=5):
     hlu = (C*rank_sum)/n_test
     return hlu
 
-def hlu(test, n_test, model, n, m, device, C=100, beta=5):
+def evaluate(test, n_test, model, n, m, device, C=100, beta=5, n_rank=10):
     from scipy.stats import rankdata
 
     beta -= 1
@@ -94,10 +94,11 @@ def hlu(test, n_test, model, n, m, device, C=100, beta=5):
             diversity += len(set(rank))
             rank = rank[target_idx]
 
-            # Summation
+            # Summation for HLU
             rank_sum += 2**((1-rank)/beta)
 
-            if rank<11:
+            # R@N
+            if rank<n_rank+1:
                 r_result+=1
 
     result = (C*rank_sum)/n_test
@@ -106,25 +107,6 @@ def hlu(test, n_test, model, n, m, device, C=100, beta=5):
 
     return result, r_result, diversity
 
-def r_at_n(test, n_test, model, n, m, rank=10):
-    from scipy.stats import rankdata
-
-    result = 0.0
-    with torch.no_grad():
-        # for x in tqdm(test, total=n_test):
-        for x in test:
-            x, _ = x[0], x[1]
-            target_idx = (x[n:n+m]==1).nonzero()
-            # Predict
-            y = model.rank_list(x).numpy()
-
-            rank = rankdata(-y, method="min")[target_idx]
-            if rank<11:
-                result+=1
-
-    result/=n_test
-
-    return result
 
 def main():
     import csv
@@ -158,7 +140,7 @@ def main():
         print(f"{path:-^60}")
         model.load_state_dict(torch.load(path))
 
-        result, r_result, diversity = hlu(test, n_test, model, n, m, device)
+        result, r_result, diversity = evaluate(test, n_test, model, n, m, device)
         # result = r_at_n(test, n_test, model, n, m)
         print(f"HLU       : {result}")
         print(f"R@10      : {r_result}")
