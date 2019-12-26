@@ -364,7 +364,7 @@ def main():
     print("{:-^60}".format("Data stat"))
     print(f"# User        : {n}\n" \
           f"# Item        : {m}\n" \
-          f"Neg sample    : {neg}\n")
+          f"Neg sample    : {neg}")
     print("{:-^60}".format("Optim status"))
     print(f"Optimizer     : {optimizer}\n" \
           f"Criterion     : {criterion}\n" \
