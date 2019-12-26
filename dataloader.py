@@ -127,7 +127,7 @@ class Data():
                 t = torch.cat((usr, t))
                 yield (t, label)
 
-    def get_data(self, neg=2):
+    def get_data(self, neg=2, seed=1234):
         """neg : you can set how larger negative sample you use"""
         train = self._train()
 
