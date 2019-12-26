@@ -1,20 +1,22 @@
 import os
+import random
 import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 # for reproducibility
 def seed_everything(seed=1234):
+    random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-seed=1234
-seed_everything(seed)
 
+torch.set_default_dtype(torch.float64)
 class BFM(nn.Module):
     """
     2-way pairwise BASKET-SENSITIVE FACTORIZATION MACHINE(BFM)
@@ -44,15 +46,16 @@ class BFM(nn.Module):
 
         # biases
         self.w_0 = nn.Parameter(torch.randn(1))
-        self.w_bias = nn.Parameter(torch.randn(n+2*m, 1))
+        self.w_bias = nn.Parameter(torch.randn(n_usr+2*n_itm, 1))
 
         # latent vectors (input must one-hot vector)
         # self.u_V = nn.Parameter(torch.normal(0, 1, size=(n, k)))
         # self.t_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
         # self.b_V = nn.Parameter(torch.normal(0, 1, size=(m, k)))
         self.u_V = nn.Parameter(torch.randn(n_usr, k))
-        self.t_V = nn.Parameter(torch.randn(n_itm, k))
+        # self.t_V = nn.Parameter(torch.randn(n_itm, k))
         self.b_V = nn.Parameter(torch.randn(n_itm, k))
+        self.t_V = self.b_V
 
         # sigmoid
         # self.sigmoid = nn.Sigmoid()
@@ -75,8 +78,8 @@ class BFM(nn.Module):
         # t^m transaction
         tm = x[self.n+2*self.m:]
         y = self.fm(t)
-        y = self.lnsigmoid(y*delta.float())
-        y *= -1
+        # y = self.lnsigmoid(y*delta.float())
+        # y *= -1
 
         # final equation
         # y += self.alpha*pmi*self.constrain(t, tm)
@@ -85,7 +88,7 @@ class BFM(nn.Module):
 
     def fm(self, x, debug=False):
         # transaction vec whose elements are only 0 or 1.
-        x = x.view((1, x.shape[0]))
+        x = x.view((1, x.shape[0])).double()
 
         # Bias for each users and items(target & basket)
         bias = torch.mm(x, self.w_bias)# .view(-1)
@@ -272,6 +275,9 @@ def main():
 
     from dataloader import Data
 
+    seed=1234
+    seed_everything(seed)
+
     ds = Data()
     train, test, valid = ds.get_data()
 
@@ -282,7 +288,7 @@ def main():
     """
     n = len(ds.usrset)
     m = len(ds.itemset)
-    k = 32
+    k = 16
 
     gamma=[1,1,1,1]
     alpha=0.0
@@ -292,8 +298,8 @@ def main():
     momentum=0
     weight_decay=0.01
 
-    epochs = 21
-    neg = 2
+    epochs=21
+    neg=0
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = BFM(n, m, k, gamma, alpha).to(device=device)
@@ -305,6 +311,10 @@ def main():
                           lr=lr, \
                           momentum=momentum, \
                           weight_decay=weight_decay)
+    # optimizer = optim.Adam(model.parameters(), \
+    #                       lr=lr, \
+    #                       weight_decay=weight_decay)
+    criterion = nn.BCEWithLogitsLoss()
 
     # traced = torch.jit.script(model)
     # x = next(train)
@@ -338,7 +348,7 @@ def main():
     # Saved directory
     today = datetime.date.today()
     c_time = datetime.datetime.now().strftime("%H-%M-%S")
-    save_dir = f"../trained/abfm/{today}/{c_time}"
+    save_dir = f"../trained/bfm/{today}/{c_time}"
     os.makedirs(save_dir, exist_ok=True)
     model_name = "BFM"
 
@@ -357,6 +367,7 @@ def main():
           f"Neg sample    : {neg}\n")
     print("{:-^60}".format("Optim status"))
     print(f"Optimizer     : {optimizer}\n" \
+          f"Criterion     : {criterion}\n" \
           f"Learning rate : {lr}\n" \
           f"Momentum      : {momentum}\n" \
           f"Weight decay  : {weight_decay}")
@@ -370,18 +381,29 @@ def main():
           f"Loaded        : {loaded}")
     if loaded:
         print(f"Learned model : {model_path}")
-    print("{:-^60}".format(""))
+    print("{:-^60}".format("Description"))
+    print("Changed random seed to get train data\n"\
+         "Use double type for all layers.")
+    print("{:-^60}".format(""), flush=True)
 
 
     for e in range(epochs):
-        print("{:-^60}".format(f"epoch {e}"))
         cnt = 0
         ave_loss = 0
-        train, _, _ = ds.get_data(neg=neg)
+        random.seed(seed)
+        seed = random.randint(0, 9999)
+        print("{:-^60}".format(f"epoch {e}, seed={seed}"))
+
+        train, _, _ = ds.get_data(neg=neg, seed=seed)
         for x in train:
             optimizer.zero_grad()
             x, label = x[0].to(device), x[1].to(device)
             loss = model(x, delta=label, pmi=1)
+            if label==-1:
+                loss = criterion(loss, label+1)
+            else:
+                loss = criterion(loss, label)
+
             loss.backward()
             optimizer.step()
 
@@ -389,12 +411,17 @@ def main():
                 ave_loss += loss.item()
             cnt+=1
             if cnt%2500==0:
-                print(f"Last loss : {loss.item():>9.6f} at {cnt:6d}, " \
+                print(f"Last loss : {loss.item():>10.6f} at {cnt:6d}, " \
                       f"Label : {label.item():2.0f},   " \
                       f"# basket item : {x.sum().item()-2:3.0f},   " \
-                      f"Average loss so far : {ave_loss/cnt:>9.6f}")
-        # print(cnt) # => 957264
-        torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
+                      f"Average loss so far : {ave_loss/cnt:>9.6f}", flush=True)
+        # torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
+        # Better way to save model?
+        state = {"name": model_name, "epoch": e, "state_dict": model.state_dict(),
+                 "neg":neg, "optimizer": optimizer.state_dict(),
+                 "k": k, "gamma": gamma, "alpha": alpha, "norm": norm}
+        torch.save(state, f"{save_dir}/{model_name}_{e}.pt")
+
         print("{:-^60}".format("end"))
 
 if __name__=="__main__":
