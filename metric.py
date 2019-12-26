@@ -1,7 +1,12 @@
-import torch
 import numpy as np
 from tqdm import tqdm
 import multiprocessing
+
+import torch
+import torch.nn.functional as F
+
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
 
 def predict(x, idx, model):
     x[idx] = 1
@@ -62,6 +67,7 @@ def multipro_hlu(test, n_test, model, n_usr, m, C=100, beta=5):
     return hlu
 
 def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10):
+    from sklearn import metrics
     from scipy.stats import rankdata
 
     beta -= 1
@@ -69,10 +75,12 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
     cnt = 0
     r_result = 0
     diversity = 0
+    prd = []
+    ans = []
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
-            x, _ = x[0].to(device), x[1].to(device)
+            x, label = x[0].to(device).double(), x[1].to(device).double()
             target_idx = (x[n_usr:n_usr+n_itm]==1).nonzero()
             # Predict
             y = model.rank_list(x).cpu().numpy()
@@ -101,11 +109,17 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
             if rank<n_rank+1:
                 r_result+=1
 
+            # AUC
+            prd.append(sigmoid(y[target_idx]))
+            ans.append(label.item())
+
     result = (C*rank_sum)/n_test
     r_result/=n_test
     diversity/=n_test
+    auc = list(metrics.roc_curve(ans, prd, pos_label=1))
+    auc.append(metrics.auc(auc[0], auc[1]))
 
-    return result, r_result, diversity
+    return result, r_result, diversity, auc
 
 
 def main():
