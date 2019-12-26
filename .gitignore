@@ -6,6 +6,7 @@ __pycache__/
 !/data/ta_feng/.gitkeep
 
 /trained/
+/eval
 path
 hlu.txt
 r@n.txt
