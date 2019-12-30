@@ -66,14 +66,14 @@ def multipro_hlu(test, n_test, model, n_usr, m, C=100, beta=5):
     hlu = (C*rank_sum)/n_test
     return hlu
 
-def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10):
+def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10, fAUC=False):
     from sklearn import metrics
     from scipy.stats import rankdata
 
     beta -= 1
     rank_sum = 0
     cnt = 0
-    r_result = 0
+    r_at_n = 0
     diversity = 0
     prd = []
     ans = []
@@ -107,19 +107,24 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
 
             # R@N
             if rank<n_rank+1:
-                r_result+=1
+                r_at_n+=1
 
-            # AUC
-            prd.append(sigmoid(y[target_idx]))
-            ans.append(label.item())
+            if fAUC:
+                # AUC can't be calculated if data has only positive data
+                prd.append(sigmoid(y[target_idx]))
+                ans.append(label.item())
 
-    result = (C*rank_sum)/n_test
-    r_result/=n_test
+    hlu = (C*rank_sum)/n_test
+    r_at_n /=n_test
     diversity/=n_test
-    auc = list(metrics.roc_curve(ans, prd, pos_label=1))
-    auc.append(metrics.auc(auc[0], auc[1]))
+    if fAUC:
+        fpr, tpr, thresholds = metrics.roc_curve(ans, prd, pos_label=1)
+        auc = metrics.auc(fpr, tpr)
+        result = (hlu, r_at_n, diversity, auc)
+    else:
+        result = (hlu, r_at_n, diversity)
 
-    return result, r_result, diversity, auc
+    return result
 
 
 def main():

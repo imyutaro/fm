@@ -384,6 +384,8 @@ def main():
     print("{:-^60}".format("Description"))
     print("Changed random seed to get train data\n"\
          "Use double type for all layers.")
+    print("{:-^60}".format("Path"))
+    print(f"{save_dir}")
     print("{:-^60}".format(""), flush=True)
 
 

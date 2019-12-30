@@ -22,6 +22,45 @@ def seed_everything(seed=1234):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
+# Load func is like below
+def load_model(filename, device, model_name="FABFM"):
+    if os.path.isfile(filename):
+        from dataloader import Data
+        # Load file
+        checkpoint = torch.load(filename)
+
+        # Load dataset setting
+        neg = checkpoint["neg"]
+        ds = Data(root_dir="../data/ta_feng/")
+        train, test, _= ds.get_data(neg=neg)
+        n_usr = len(ds.usrset)
+        n_itm = len(ds.itemset)
+
+        # Load network
+        # model_name = checkpoint["name"]
+        optimizer = checkpoint["optimizer"]
+        k = checkpoint["k"]
+        gamma = checkpoint["gamma"]
+        alpha = checkpoint["alpha"]
+        if model_name=="FABFM":
+            d = checkpoint["d"]
+            h = checkpoint["h"]
+            from models.fixed_abfm import FABFM
+            model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
+        elif model_name=="ABFM":
+            from models.abfm import ABFM
+            model = ABFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
+        elif model_name=="BFM":
+            from models.bfm import BFM
+            norm = checkpoint["norm"]
+            model = BFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
+        model.load_state_dict(checkpoint["state_dict"])
+
+        return model, train, test, ds.n_train, ds.n_test, n_usr, n_itm
+    else:
+        print(f"There is not {filename}")
+        return None
+
 torch.set_default_dtype(torch.float64)
 class FABFM(BFM):
     def __init__(self, n_usr, n_itm, k, d, h=1, gamma=[1,1,1,1], alpha=0.0):
@@ -40,6 +79,11 @@ class FABFM(BFM):
         self.WV = nn.Parameter(torch.randn(h, k, d))
         self.sqrt_d = np.sqrt(d)
         self.h = h
+
+        # For after multihead
+        self.layernorm1 = nn.LayerNorm(k,1)
+        # For after feed forward
+        # self.layernorm2 = nn.LayerNorm()
 
         # Matrix to convert multi-head attention to one matrix
         self.O = nn.Parameter(torch.randn(h*d, k))
@@ -135,6 +179,7 @@ class FABFM(BFM):
         # Experimental ------------
         attn_V = attn_V.sum(1).view(1,-1)
         attn_V = torch.mm(attn_V, self.O)
+        attn_V = self.layernorm1(attn_V)
         t_b = torch.mm(t_vec, attn_V.t())
         # print("---- t_b ----")
         # print(t_b.shape)
@@ -180,8 +225,8 @@ class FABFM(BFM):
 
         if debug:
             print(f"attn  : {attn}\n" \
-                  f"WQ    : {self.WQ}\n" \
-                  f"WK    : {self.WK}\n" \
+                  # f"WQ    : {self.WQ}\n" \
+                  # f"WK    : {self.WK}\n" \
                   # f"u_t   : {u_t.item():>8.5f}\n" \
                   # f"t_b   : {t_b.item():>8.5f}\n" \
                   # f"bs    : {bs.item():>8.5f}\n" \
@@ -239,20 +284,63 @@ class FABFM(BFM):
         u_t = (u_vec * t_vec).sum(-1).sum(-1)
 
         duplicated_bvecs = b_vecs.expand(self.h,-1,-1)
+        duplicated_tvec = t_vec.expand(self.h,-1,-1,-1)
 
-        Q = torch.bmm(duplicated_bvecs, self.WQ)
-        K = torch.bmm(duplicated_bvecs, self.WK)
+        Q = self.WQ.unsqueeze(dim=1)
+        # print(duplicated_tvec.shape)
+        # print(Q.shape)
+        # print(self.WQ.shape)
+        Q = (duplicated_tvec*Q)
+        # print(Q.shape)
+        Q = Q.sum(-1).unsqueeze(dim=2)
+        K = torch.bmm(duplicated_bvecs, self.WK).unsqueeze(dim=1)
         V = torch.bmm(duplicated_bvecs, self.WV)
+        # print("-----")
+        # print("Q : ", Q.shape)
+        # print("K : ", K.shape)
+        # print("V : ", V.shape)
+        # print(V[0])
         attn = (Q*K).sum(-1)/self.sqrt_d
-        attn = self.softmax(attn).view(self.h,n_b,1)
-        attn_V = (attn*V).unsqueeze(dim=1)
+        # print("-----")
+        # print(attn.shape)
+        # print(attn)
+        attn = self.softmax(attn)# .view(self.h,n_b,1)
+        # print("attn : ", attn.shape)
+        # print(attn)
+        attn_V = torch.bmm(attn,V)# .unsqueeze(dim=1)
+        # print("-----")
+        # print("attn*V : ", attn_V.shape)
+        # print(attn_V)
+        attn_V = torch.cat((attn_V[0], attn_V[1]), dim=-1)
+        # print("attn*V : ", attn_V.shape)
+        # print(attn_V)
+        # print("-----")
+        # print("O : ", self.O.shape)
+        attn_V = torch.mm(attn_V, self.O)
+        # r_lnorm = nn.LayerNorm(attn_V.size[1:])
+        # attn_V = r_lnorm(attn_V)
+        attn_V = self.layernorm1(attn_V)
+        # print("attn*V : ", attn_V.shape)
+        # print(attn_V)
+        # print("-----")
+
+        # print("t-vec : ", t_vec.shape)
+        # print("u-vec : ", u_vec.shape)
+
         # Target item & basket items relation with attention
         # TODO: Fix stupid sum
-        t_b = (attn_V*t_vec).sum(-1).sum(-1).sum(0)
-        t_b/=(n_b*self.h) # just addition to convert scalar
+        # t_b = (attn_V*t_vec).sum(-1).sum(-1).sum(0)
+        t_vec = t_vec.view(t_vec.shape[1],t_vec.shape[0],t_vec.shape[2])
+        t_b = (attn_V*t_vec).sum(-1)#.sum(-1).sum(0)
+        # t_b/=(n_b*self.h) # just addition to convert scalar
         # User & basket items relation with attention
         u_b = (attn_V*u_vec).sum(-1)
-        u_b = u_b.sum()/(n_b*self.h) # just addition to convert scalar
+        # u_b = u_b.sum()/(n_b*self.h) # just addition to convert scalar
+
+        # print("t-b : ", t_b.shape)
+        # print("u-b : ", u_b.shape)
+        # exit(0)
+
 
 
         # Among basket items relation
@@ -303,7 +391,7 @@ def main():
 
     lr=0.0001
     momentum=0
-    weight_decay=0.01
+    weight_decay=0
 
     epochs=21
     neg=2
@@ -333,9 +421,9 @@ def main():
     # Load trained parameters
     loaded = False
     if loaded:
-        model_path = "../trained/"
-        model.load_state_dict(torch.load(model_path))
-        epochs = 5
+        model_path = "../trained/fixed_abfm/2019-12-28/19-02-19/FABFM_20.pt"
+        model, train, test, l_train, l_test, n_usr, n_itm = load_model(model_path, device, model_name="FABFM")
+        epochs = 101
 
 
     # Print Information
@@ -365,7 +453,11 @@ def main():
           "Attention is applied to only t_b and u_b.\n"\
           "Use same vector for target and basket.\n"\
           "Changed random seed to get train data.\n"\
+          "Add layer normalization after attn_V*O\n"\
+          "Without L2 norm.\n"\
           "Use double type for all layers.")
+    print("{:-^60}".format("Path"))
+    print(f"{save_dir}")
     print("{:-^60}".format(""), flush=True)
 
 
@@ -403,46 +495,6 @@ def main():
                  "neg":neg, "optimizer": optimizer.state_dict(), "k": k,
                  "d": d, "h": h, "gamma": gamma, "alpha": alpha}
         torch.save(state, f"{save_dir}/{model_name}_{e}.pt")
-
-        """
-        # Load func is like below
-        def load_model(filename, model_name=FABFM):
-            if os.path.isfile(filename):
-                # Load file
-                checkpoint = torch.load(filename)
-
-                # Load dataset setting
-                neg = checkpoint["neg"]
-                ds = Data(root_dir="./data/ta_feng/")
-                _, _, _= ds.get_data(neg=neg)
-                n_usr = len(ds.usrset)
-                n_itm = len(ds.itemset)
-
-                # Load network
-                optimizer = checkpoint["optimizer"]
-                k = checkpoint["k"]
-                gamma = checkpoint["gamma"]
-                alpha = checkpoint["alpha"]
-                norm = checkpoint["norm"]
-                device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-                if model_name=="FABFM":
-                    d = checkpoint["d"]
-                    h = checkpoint["h"]
-                    from models.fixed_abfm import FABFM
-                    model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
-                elif model_name=="ABFM":
-                    from models.abfm import ABFM
-                    model = ABFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
-                elif model_name=="BFM":
-                    from models.bfm import BFM
-                    model = BFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
-                model.load_state_dict(checkpoint["state_dict"])
-                return model
-            else:
-                print(f"There is not {filename}")
-                return None
-        """
-
 
         print("{:-^60}".format("end"))
 
