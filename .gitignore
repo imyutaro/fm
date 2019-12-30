@@ -6,7 +6,9 @@ __pycache__/
 !/data/ta_feng/.gitkeep
 
 /trained/
+/eval
 path
+path_for_metric
 hlu.txt
 r@n.txt
 
@@ -14,6 +16,7 @@ tmp/
 tmp*/
 tmp.*
 tmp*.*
+*tmp*
 *.tmp
 *.output
 
