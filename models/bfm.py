@@ -45,7 +45,8 @@ class BFM(nn.Module):
         self.k = k
 
         # biases
-        self.w_0 = nn.Parameter(torch.randn(1))
+        # self.w_0 = nn.Parameter(torch.randn(1))
+        self.w_0 = nn.Parameter(torch.zeros(1))
         self.w_bias = nn.Parameter(torch.randn(n_usr+2*n_itm, 1))
 
         # latent vectors (input must one-hot vector)
