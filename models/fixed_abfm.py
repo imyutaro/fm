@@ -23,7 +23,7 @@ def seed_everything(seed=1234):
     torch.backends.cudnn.deterministic = True
 
 # Load func is like below
-def load_model(filename, device, model_name="FABFM"):
+def load_model(filename, device, model_name="FABFM", seed=1234):
     if os.path.isfile(filename):
         from dataloader import Data
         # Load file
@@ -42,6 +42,11 @@ def load_model(filename, device, model_name="FABFM"):
         k = checkpoint["k"]
         gamma = checkpoint["gamma"]
         alpha = checkpoint["alpha"]
+        epoch = checkpoint["epoch"]
+        for _ in range(epoch+1):
+            random.seed(seed)
+            seed = random.randint(0, 9999)
+
         if model_name=="FABFM":
             d = checkpoint["d"]
             h = checkpoint["h"]
@@ -56,15 +61,15 @@ def load_model(filename, device, model_name="FABFM"):
             model = BFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
         model.load_state_dict(checkpoint["state_dict"])
 
-        return model, train, test, ds.n_train, ds.n_test, n_usr, n_itm
+        return model, train, test, ds.n_train, ds.n_test, n_usr, n_itm, seed
     else:
         print(f"There is not {filename}")
         return None
 
 torch.set_default_dtype(torch.float64)
 class FABFM(BFM):
-    def __init__(self, n_usr, n_itm, k, d, h=1, gamma=[1,1,1,1], alpha=0.0):
-        super(FABFM, self).__init__(n_usr, n_itm, k, gamma=[1,1,1,1], alpha=0.0)
+    def __init__(self, n_usr, n_itm, k, d, h=1, gamma=[1,1,1,1], alpha=0.0, norm=False):
+        super(FABFM, self).__init__(n_usr, n_itm, k, gamma, alpha, norm)
         """
         d : dim of query, value and key
         h : the number of heads
@@ -88,7 +93,7 @@ class FABFM(BFM):
         # Matrix to convert multi-head attention to one matrix
         self.O = nn.Parameter(torch.randn(h*d, k))
 
-    def fm(self, x, debug=False):
+    def fm(self, x, norm=False, debug=False):
         # transaction vec whose elements are only 0 or 1.
         x = x.view((1, x.shape[0])).double()
 
@@ -197,12 +202,18 @@ class FABFM(BFM):
         # At this point range(n_b) makes error because the last for loop i+1==n_b,
         # so b_vecs[i+1:n:b] is size 0 vec. That size 0 vec cause error
         # like : https://github.com/pytorch/pytorch/issues/20006
-        bs = None
-        for i in range(n_b-1):
-            if bs is None:
-                bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
-            else:
-                bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
+        if self.gamma[2]==1:
+            bs = None
+            for i in range(n_b-1):
+                if bs is None:
+                    bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
+                else:
+                    bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum(dim=-1, keepdim=True)
+            if self.norm:
+                bs /= n_b
+        else:
+            # bs = torch.zeros(1)
+            bs = 0
 
         # User & basket items relation with attention
         # Experimental ------------
@@ -233,7 +244,8 @@ class FABFM(BFM):
                   # f"u_b   : {u_b.item():>8.5f}\n" \
                   f"u_t   : {u_t.item()}\n" \
                   f"t_b   : {t_b.item()}\n" \
-                  f"bs    : {bs.item()}\n" \
+                  # f"bs    : {bs.item()}\n" \
+                  f"bs    : {bs}\n" \
                   f"u_b   : {u_b.item()}\n" \
                   f"bias  : {bias.item()}\n" \
                   f"w_0   : {self.w_0.item():>8.5f}\n" \
@@ -350,6 +362,8 @@ class FABFM(BFM):
                 bs = torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
             else:
                 bs += torch.mm(b_vecs[i].view(1,-1), b_vecs[i+1:n_b].t()).sum()
+        if self.norm:
+            bs /= n_b
 
         # Output
         y = self.w_0 + \
@@ -384,31 +398,34 @@ def main():
     n_itm = len(ds.itemset)
     k = 16
 
-    gamma=[1,1,1,1]
+    gamma=[1,1,0,1]
     alpha=0.0
     d=k
     h=2
+    norm=False
 
     lr=0.0001
     momentum=0
+    # weight_decay=1e-5
     weight_decay=0
 
-    epochs=21
+    # epochs=21
+    epochs=100
     neg=2
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
+    model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha, norm).to(device=device)
 
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    optimizer = optim.SGD(model.parameters(), \
-                          lr=lr, \
-                          momentum=momentum, \
-                          weight_decay=weight_decay)
-    # optimizer = optim.Adam(model.parameters(), \
+    # optimizer = optim.SGD(model.parameters(), \
     #                       lr=lr, \
+    #                       momentum=momentum, \
     #                       weight_decay=weight_decay)
+    optimizer = optim.Adam(model.parameters(), \
+                          lr=lr, \
+                          weight_decay=weight_decay)
     criterion = nn.BCEWithLogitsLoss()
 
     # Saved directory
@@ -421,10 +438,9 @@ def main():
     # Load trained parameters
     loaded = False
     if loaded:
-        model_path = "../trained/fixed_abfm/2019-12-28/19-02-19/FABFM_20.pt"
-        model, train, test, l_train, l_test, n_usr, n_itm = load_model(model_path, device, model_name="FABFM")
+        model_path = "../trained/fixed_abfm/2019-12-31/16-06-33/FABFM_20.pt"
+        model, train, test, l_train, l_test, n_usr, n_itm, seed = load_model(model_path, device, model_name="FABFM", seed=seed)
         epochs = 101
-
 
     # Print Information
     print("{:-^60}".format("Data stat"))
@@ -445,6 +461,7 @@ def main():
           f"Gamma         : {gamma}\n" \
           f"Alpha         : {alpha}\n" \
           f"Epochs        : {epochs}\n" \
+          f"Norm          : {norm}\n" \
           f"Loaded        : {loaded}")
     if loaded:
         print(f"Learned model : {model_path}")
@@ -454,7 +471,11 @@ def main():
           "Use same vector for target and basket.\n"\
           "Changed random seed to get train data.\n"\
           "Add layer normalization after attn_V*O\n"\
+          # "Change L2 norm coefficient to 1e-5(0.00001).\n"\
+          "no basket interaction\n"\
+          # "Normalize basket items interaction.\n"\
           "Without L2 norm.\n"\
+          # "Pos:Neg=1:1\n"\
           "Use double type for all layers.")
     print("{:-^60}".format("Path"))
     print(f"{save_dir}")
@@ -493,7 +514,7 @@ def main():
         # Better way to save model?
         state = {"name": model_name, "epoch": e, "state_dict": model.state_dict(),
                  "neg":neg, "optimizer": optimizer.state_dict(), "k": k,
-                 "d": d, "h": h, "gamma": gamma, "alpha": alpha}
+                 "d": d, "h": h, "gamma": gamma, "alpha": alpha, "norm": norm}
         torch.save(state, f"{save_dir}/{model_name}_{e}.pt")
 
         print("{:-^60}".format("end"))
