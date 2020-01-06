@@ -22,7 +22,7 @@ def load_model(filename, device, model_name="FABFM"):
         # Load dataset setting
         neg = checkpoint["neg"]
         ds = Data(root_dir="./data/ta_feng/")
-        train, test, _= ds.get_data(neg=neg)
+        train, test, _= ds.get_data(neg=neg, test_neg=True)
         n_usr = len(ds.usrset)
         n_itm = len(ds.itemset)
 
@@ -32,17 +32,18 @@ def load_model(filename, device, model_name="FABFM"):
         k = checkpoint["k"]
         gamma = checkpoint["gamma"]
         alpha = checkpoint["alpha"]
+        norm = checkpoint["norm"]
         if model_name=="FABFM":
             d = checkpoint["d"]
             h = checkpoint["h"]
             from models.fixed_abfm import FABFM
-            model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
+            # model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
+            model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha, norm=norm).to(device=device)
         elif model_name=="ABFM":
             from models.abfm import ABFM
             model = ABFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
         elif model_name=="BFM":
             from models.bfm import BFM
-            norm = checkpoint["norm"]
             model = BFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
         model.load_state_dict(checkpoint["state_dict"])
 
@@ -51,11 +52,11 @@ def load_model(filename, device, model_name="FABFM"):
               f"# Item        : {n_itm}\n" \
               f"Neg sample    : {neg}")
         print("{:-^60}".format("Optim status"))
-        print(f"lr            : {optimizer['param_groups'][0]['lr']}\n"\
-              f"Momentum      : {optimizer['param_groups'][0]['momentum']}\n"\
-              f"Dampening     : {optimizer['param_groups'][0]['dampening']}\n"\
-              f"Weight_decay  : {optimizer['param_groups'][0]['weight_decay']}\n"\
-              f"Nesterov      : {optimizer['param_groups'][0]['nesterov']}")
+        # print(f"lr            : {optimizer['param_groups'][0]['lr']}\n"\
+        #       f"Momentum      : {optimizer['param_groups'][0]['momentum']}\n"\
+        #       f"Dampening     : {optimizer['param_groups'][0]['dampening']}\n"\
+        #       f"Weight_decay  : {optimizer['param_groups'][0]['weight_decay']}\n"\
+        #       f"Nesterov      : {optimizer['param_groups'][0]['nesterov']}")
         print("{:-^60}".format("Model/Learning status"))
         print(f"Mid dim       : {k}\n" \
               f"Gamma         : {gamma}\n" \
@@ -101,13 +102,13 @@ def main():
     # epochs=21
     # neg=2
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # model = ABFM(n_usr, n_itm, k).to(device=device)
     # model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
 
     with open("./path_for_metric") as f:
         paths = [row[0] for row in csv.reader(f, delimiter="\n")]
-    paths = paths[11:]
+    paths = paths[19:]
     # paths = paths[42:]
     # paths = paths[69:70]
 
@@ -134,12 +135,13 @@ def main():
                       f"AUC       : {auc}\n" \
                        "{:-^60}".format(""), flush=True)
             elif choice=="test":
-                result, r_result, diversity = evaluate(test, l_test, model, n_usr, n_itm, \
-                                                       device, C=100, beta=5, n_rank=10)
+                result, r_result, diversity, auc = evaluate(test, l_test, model, n_usr, n_itm, \
+                                                       device, C=100, beta=5, n_rank=10, fAUC=True)
                 print(f"Data      : {choice}\n" \
                       f"HLU       : {result}\n" \
                       f"R@10      : {r_result}\n" \
                       f"Diversity : {diversity}\n" \
+                      f"AUC       : {auc}\n" \
                        "{:-^60}".format(""), flush=True)
         else:
             criterion = nn.BCEWithLogitsLoss()
