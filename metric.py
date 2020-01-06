@@ -69,6 +69,7 @@ def multipro_hlu(test, n_test, model, n_usr, m, C=100, beta=5):
 def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10, fAUC=False):
     from sklearn import metrics
     from scipy.stats import rankdata
+    from sklearn.preprocessing import minmax_scale
 
     beta -= 1
     rank_sum = 0
@@ -98,7 +99,20 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
                 exit()
             """
 
-            rank = rankdata(-y, method="min")
+            if fAUC:
+                # AUC can't be calculated if data has only positive data
+                # prd.append(sigmoid(y[0][target_idx]))
+                prd.append(sigmoid(y[target_idx]))
+                ans.append(label.item())
+
+            if label==1:
+                # If label is pos, the greater value of y is better.
+                # If label is neg, the lower value of y is better.
+                y*=-1
+
+            # Normalize 0 to 1000
+            # rank = minmax_scale(y[0], feature_range=(0,1000))
+            rank = rankdata(y, method="min")
             diversity += len(set(rank))
             rank = rank[target_idx]
 
@@ -108,11 +122,6 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
             # R@N
             if rank<n_rank+1:
                 r_at_n+=1
-
-            if fAUC:
-                # AUC can't be calculated if data has only positive data
-                prd.append(sigmoid(y[target_idx]))
-                ans.append(label.item())
 
     hlu = (C*rank_sum)/n_test
     r_at_n /=n_test
