@@ -26,6 +26,8 @@ class Data():
         self.o_usr = self._usr2vec(self.usrset)
         self.o_item = self._item2vec(self.itemset)
 
+        self.n_neg = {}
+
     def _uiset(self, data):
         """Make user and item set from data"""
         usrset = set()
@@ -68,10 +70,24 @@ class Data():
         neg_train = pickle.load(f)
         if type(neg_train) is dict:
             neg_train = [(u, list(t), -1) for u, ts in neg_train.items() for t in ts]
-        self.n_neg = len(neg_train)
+        self.n_neg["train"] = len(neg_train)
 
         return neg_train
 
+    def _neg_load(self, src, neg):
+
+        assert neg==1 or neg==2, "neg option has to be 1 or 2"
+        if neg==2:
+            f = open(self.root_dir+f"/neg/neg_{src}_2.pkl","rb")
+        elif neg==1:
+            f = open(self.root_dir+f"/neg/neg_{src}_1.pkl","rb")
+
+        neg_data = pickle.load(f)
+        if type(neg_data) is dict:
+            neg_data = [(u, list(t), -1) for u, ts in neg_data.items() for t in ts]
+        self.n_neg[f"{src}"] = len(neg_data)
+
+        return neg_data
 
     def _test(self):
         f = open(self.root_dir+"test.pkl","rb")
@@ -127,19 +143,24 @@ class Data():
                 t = torch.cat((usr, t))
                 yield (t, label)
 
-    def get_data(self, neg=2, seed=1234):
+    def get_data(self, neg=2, test_neg=False, seed=1234):
         """neg : you can set how larger negative sample you use"""
         train = self._train()
-
         if neg:
             neg_train = self._neg_train(neg)
-            train = train + neg_train
+            train += neg_train
 
+        # Shuffle train data
         for _ in range(22):
             train = random.Random(seed).sample(train, len(train))
         train = self._convert(train)
 
-        test = self._convert(self._test())
+        test = self._test()
+        if test_neg:
+            neg_test = self._neg_load(src="test", neg=neg)
+            test += neg_test
+        test = self._convert(test)
+
         valid = self._convert(self._valid())
 
         return train, test, valid
