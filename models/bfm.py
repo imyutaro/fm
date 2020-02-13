@@ -289,18 +289,19 @@ def main():
     """
     n = len(ds.usrset)
     m = len(ds.itemset)
-    k = 16
+    k = 4
 
     gamma=[1,1,1,1]
     alpha=0.0
     norm=False
 
-    lr=0.0001
+    # lr=0.0001
+    lr=0.01
     momentum=0
     weight_decay=0.01
 
     epochs=21
-    neg=0
+    neg=2
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = BFM(n, m, k, gamma, alpha).to(device=device)
