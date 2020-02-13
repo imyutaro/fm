@@ -134,36 +134,13 @@ class FABFM(BFM):
         Q = torch.bmm(duplicated_tvec, self.WQ)
         K = torch.bmm(duplicated_bvecs, self.WK)
         V = torch.bmm(duplicated_bvecs, self.WV)
-        # print("Q")
-        # print(Q.shape)
-        # print(Q)
-        # print("K")
-        # print(K.shape)
-        # print(K)
-        # print("V")
-        # print(V.shape)
-        # print(V)
-        # print("\n")
 
         # Dot product with each Q row and K row
         attn = (Q*K).sum(-1)/self.sqrt_d
-        # print("---Q*K---")
-        # print(attn.shape)
-        # print(attn)
         # softmax based on each vector
         attn = self.softmax(attn).view(self.h,n_b,1)
-        # print("---softmax---")
-        # print(attn.shape)
-        # print(attn)
         # multiply attention and corresponding V row vector
         attn_V = attn*V
-        # print("---basket V---")
-        # print(b_vecs.shape)
-        # print(b_vecs)
-        # print("---attn*V---")
-        # print("(head, # basket, latent dim)")
-        # print(attn.shape)
-        # print(attn)
 
         # TODO
         # Now we got basket vectors multiplied by attention.
@@ -178,17 +155,11 @@ class FABFM(BFM):
 
         # Target item & basket items relation with attention
         # Just multiply attn and target item vector
-        # print("---- t_vec ----")
-        # print(t_vec.shape)
-        # print(t_vec)
         # Experimental ------------
         attn_V = attn_V.sum(1).view(1,-1)
         attn_V = torch.mm(attn_V, self.O)
         attn_V = self.layernorm1(attn_V)
         t_b = torch.mm(t_vec, attn_V.t())
-        # print("---- t_b ----")
-        # print(t_b.shape)
-        # print(t_b)
         # Original -----------------
         # We cannot use FFNN to convert target basket dot product vectors
         # because the number of basket items are dynamic.
@@ -302,6 +273,7 @@ class FABFM(BFM):
         # print(duplicated_tvec.shape)
         # print(Q.shape)
         # print(self.WQ.shape)
+        Q = Q.permute(0,1,3,2)
         Q = (duplicated_tvec*Q)
         # print(Q.shape)
         Q = Q.sum(-1).unsqueeze(dim=2)
@@ -323,7 +295,9 @@ class FABFM(BFM):
         # print("-----")
         # print("attn*V : ", attn_V.shape)
         # print(attn_V)
-        attn_V = torch.cat((attn_V[0], attn_V[1]), dim=-1)
+        attn_V = attn_V.permute(1,0,2)
+        attn_V = attn_V.reshape(self.m, -1)
+        # attn_V = torch.cat((attn_V[0], attn_V[1]), dim=-1) # original if h==2, it's okay
         # print("attn*V : ", attn_V.shape)
         # print(attn_V)
         # print("-----")
