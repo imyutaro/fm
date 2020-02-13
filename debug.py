@@ -12,22 +12,38 @@ def seed_everything(seed=1234):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
+def numOfparam(model):
+    pp=0
+    for p in list(model.parameters()):
+        nn=1
+        for s in list(p.size()):
+            nn = nn*s
+        pp += nn
+    print(f"# of params : {pp}")
+
 # Load func is like below
-def load_model(filename, device, model_name="FABFM"):
+def load_model(filename, device, model_name="FABFM", choice="test"):
     if os.path.isfile(filename):
         from dataloader import Data
         # Load file
         checkpoint = torch.load(filename)
 
         # Load dataset setting
-        neg = checkpoint["neg"]
+        if choice=="test":
+            neg = 1
+            test_neg=True
+        else:
+            # neg = checkpoint["neg"]
+            # For experiment
+            neg = 1
+            test_neg=False
         ds = Data(root_dir="./data/ta_feng/")
-        train, test, _= ds.get_data(neg=neg, test_neg=True)
+        train, test, _= ds.get_data(neg=neg, test_neg=test_neg)
         n_usr = len(ds.usrset)
         n_itm = len(ds.itemset)
 
         # Load network
-        # model_name = checkpoint["name"]
+        model_name = checkpoint["name"]
         optimizer = checkpoint["optimizer"]
         k = checkpoint["k"]
         gamma = checkpoint["gamma"]
@@ -77,9 +93,6 @@ def main():
     import time
     from scipy.stats import rankdata
 
-    from models.bfm import BFM
-    from models.abfm import ABFM
-    from models.fixed_abfm import FABFM
     from dataloader import Data
 
     # ds = Data(root_dir="./data/ta_feng/")
@@ -108,20 +121,18 @@ def main():
 
     with open("./path_for_metric") as f:
         paths = [row[0] for row in csv.reader(f, delimiter="\n")]
-    paths = paths[19:]
-    # paths = paths[42:]
-    # paths = paths[69:70]
-
+    # paths = paths[35:36]
+    paths = paths[41:]
 
     cnt = 0
     for i, path in enumerate(paths):
         print(f"{path:-^60}")
-        name = get_name(path)
-        model, train, test, l_train, l_test, n_usr, n_itm = load_model(path, device, model_name=name)
 
         # choice= "train"
         choice= "test"
-        metric=False
+        metric=True
+        name = get_name(path)
+        model, train, test, l_train, l_test, n_usr, n_itm = load_model(path, device, model_name=name, choice=choice)
         if metric:
             from metric import evaluate
 
