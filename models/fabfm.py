@@ -37,7 +37,7 @@ def load_model(filename, device, model_name="FABFM", seed=1234):
         n_itm = len(ds.itemset)
 
         # Load network
-        # model_name = checkpoint["name"]
+        model_name = checkpoint["name"]
         optimizer = checkpoint["optimizer"]
         k = checkpoint["k"]
         gamma = checkpoint["gamma"]
@@ -270,48 +270,21 @@ class FABFM(BFM):
         duplicated_tvec = t_vec.expand(self.h,-1,-1,-1)
 
         Q = self.WQ.unsqueeze(dim=1)
-        # print(duplicated_tvec.shape)
-        # print(Q.shape)
-        # print(self.WQ.shape)
         Q = Q.permute(0,1,3,2)
         Q = (duplicated_tvec*Q)
-        # print(Q.shape)
         Q = Q.sum(-1).unsqueeze(dim=2)
         K = torch.bmm(duplicated_bvecs, self.WK).unsqueeze(dim=1)
         V = torch.bmm(duplicated_bvecs, self.WV)
-        # print("-----")
-        # print("Q : ", Q.shape)
-        # print("K : ", K.shape)
-        # print("V : ", V.shape)
-        # print(V[0])
         attn = (Q*K).sum(-1)/self.sqrt_d
-        # print("-----")
-        # print(attn.shape)
-        # print(attn)
         attn = self.softmax(attn)# .view(self.h,n_b,1)
-        # print("attn : ", attn.shape)
-        # print(attn)
         attn_V = torch.bmm(attn,V)# .unsqueeze(dim=1)
-        # print("-----")
-        # print("attn*V : ", attn_V.shape)
-        # print(attn_V)
         attn_V = attn_V.permute(1,0,2)
         attn_V = attn_V.reshape(self.m, -1)
         # attn_V = torch.cat((attn_V[0], attn_V[1]), dim=-1) # original if h==2, it's okay
-        # print("attn*V : ", attn_V.shape)
-        # print(attn_V)
-        # print("-----")
-        # print("O : ", self.O.shape)
         attn_V = torch.mm(attn_V, self.O)
         # r_lnorm = nn.LayerNorm(attn_V.size[1:])
         # attn_V = r_lnorm(attn_V)
         attn_V = self.layernorm1(attn_V)
-        # print("attn*V : ", attn_V.shape)
-        # print(attn_V)
-        # print("-----")
-
-        # print("t-vec : ", t_vec.shape)
-        # print("u-vec : ", u_vec.shape)
 
         # Target item & basket items relation with attention
         # TODO: Fix stupid sum
@@ -322,12 +295,6 @@ class FABFM(BFM):
         # User & basket items relation with attention
         u_b = (attn_V*u_vec).sum(-1)
         # u_b = u_b.sum()/(n_b*self.h) # just addition to convert scalar
-
-        # print("t-b : ", t_b.shape)
-        # print("u-b : ", u_b.shape)
-        # exit(0)
-
-
 
         # Among basket items relation
         bs = None
@@ -412,7 +379,7 @@ def main():
     # Load trained parameters
     loaded = False
     if loaded:
-        model_path = "../trained/fixed_abfm/2019-12-31/16-06-33/FABFM_20.pt"
+        model_path = ""
         model, train, test, l_train, l_test, n_usr, n_itm, seed = load_model(model_path, device, model_name="FABFM", seed=seed)
         epochs = 101
 
