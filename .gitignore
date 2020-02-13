@@ -6,9 +6,10 @@ __pycache__/
 !/data/ta_feng/.gitkeep
 
 /trained/
+/for_graph
+img/
 /eval
-path
-path_for_metric
+path*
 hlu.txt
 r@n.txt
 
