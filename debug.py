@@ -12,37 +12,54 @@ def seed_everything(seed=1234):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
+def numOfparam(model):
+    pp=0
+    for p in list(model.parameters()):
+        nn=1
+        for s in list(p.size()):
+            nn = nn*s
+        pp += nn
+    print(f"# of params : {pp}")
+
 # Load func is like below
-def load_model(filename, device, model_name="FABFM"):
+def load_model(filename, device, model_name="FABFM", choice="test"):
     if os.path.isfile(filename):
         from dataloader import Data
         # Load file
         checkpoint = torch.load(filename)
 
         # Load dataset setting
-        neg = checkpoint["neg"]
+        if choice=="test":
+            neg = 1
+            test_neg=True
+        else:
+            # neg = checkpoint["neg"]
+            # For experiment
+            neg = 1
+            test_neg=False
         ds = Data(root_dir="./data/ta_feng/")
-        train, test, _= ds.get_data(neg=neg)
+        train, test, _= ds.get_data(neg=neg, test_neg=test_neg)
         n_usr = len(ds.usrset)
         n_itm = len(ds.itemset)
 
         # Load network
-        # model_name = checkpoint["name"]
+        model_name = checkpoint["name"]
         optimizer = checkpoint["optimizer"]
         k = checkpoint["k"]
         gamma = checkpoint["gamma"]
         alpha = checkpoint["alpha"]
+        norm = checkpoint["norm"]
         if model_name=="FABFM":
             d = checkpoint["d"]
             h = checkpoint["h"]
             from models.fixed_abfm import FABFM
-            model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
+            # model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
+            model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha, norm=norm).to(device=device)
         elif model_name=="ABFM":
             from models.abfm import ABFM
             model = ABFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
         elif model_name=="BFM":
             from models.bfm import BFM
-            norm = checkpoint["norm"]
             model = BFM(n_usr, n_itm, k, gamma, alpha).to(device=device)
         model.load_state_dict(checkpoint["state_dict"])
 
@@ -51,11 +68,11 @@ def load_model(filename, device, model_name="FABFM"):
               f"# Item        : {n_itm}\n" \
               f"Neg sample    : {neg}")
         print("{:-^60}".format("Optim status"))
-        print(f"lr            : {optimizer['param_groups'][0]['lr']}\n"\
-              f"Momentum      : {optimizer['param_groups'][0]['momentum']}\n"\
-              f"Dampening     : {optimizer['param_groups'][0]['dampening']}\n"\
-              f"Weight_decay  : {optimizer['param_groups'][0]['weight_decay']}\n"\
-              f"Nesterov      : {optimizer['param_groups'][0]['nesterov']}")
+        # print(f"lr            : {optimizer['param_groups'][0]['lr']}\n"\
+        #       f"Momentum      : {optimizer['param_groups'][0]['momentum']}\n"\
+        #       f"Dampening     : {optimizer['param_groups'][0]['dampening']}\n"\
+        #       f"Weight_decay  : {optimizer['param_groups'][0]['weight_decay']}\n"\
+        #       f"Nesterov      : {optimizer['param_groups'][0]['nesterov']}")
         print("{:-^60}".format("Model/Learning status"))
         print(f"Mid dim       : {k}\n" \
               f"Gamma         : {gamma}\n" \
@@ -76,9 +93,6 @@ def main():
     import time
     from scipy.stats import rankdata
 
-    from models.bfm import BFM
-    from models.abfm import ABFM
-    from models.fixed_abfm import FABFM
     from dataloader import Data
 
     # ds = Data(root_dir="./data/ta_feng/")
@@ -101,26 +115,24 @@ def main():
     # epochs=21
     # neg=2
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # model = ABFM(n_usr, n_itm, k).to(device=device)
     # model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha).to(device=device)
 
     with open("./path_for_metric") as f:
         paths = [row[0] for row in csv.reader(f, delimiter="\n")]
-    paths = paths[11:]
-    # paths = paths[42:]
-    # paths = paths[69:70]
-
+    # paths = paths[35:36]
+    paths = paths[41:]
 
     cnt = 0
     for i, path in enumerate(paths):
         print(f"{path:-^60}")
-        name = get_name(path)
-        model, train, test, l_train, l_test, n_usr, n_itm = load_model(path, device, model_name=name)
 
         # choice= "train"
         choice= "test"
-        metric=False
+        metric=True
+        name = get_name(path)
+        model, train, test, l_train, l_test, n_usr, n_itm = load_model(path, device, model_name=name, choice=choice)
         if metric:
             from metric import evaluate
 
@@ -134,12 +146,13 @@ def main():
                       f"AUC       : {auc}\n" \
                        "{:-^60}".format(""), flush=True)
             elif choice=="test":
-                result, r_result, diversity = evaluate(test, l_test, model, n_usr, n_itm, \
-                                                       device, C=100, beta=5, n_rank=10)
+                result, r_result, diversity, auc = evaluate(test, l_test, model, n_usr, n_itm, \
+                                                       device, C=100, beta=5, n_rank=10, fAUC=True)
                 print(f"Data      : {choice}\n" \
                       f"HLU       : {result}\n" \
                       f"R@10      : {r_result}\n" \
                       f"Diversity : {diversity}\n" \
+                      f"AUC       : {auc}\n" \
                        "{:-^60}".format(""), flush=True)
         else:
             criterion = nn.BCEWithLogitsLoss()
