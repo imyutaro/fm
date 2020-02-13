@@ -3,9 +3,17 @@ from tqdm import tqdm
 import multiprocessing
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 def sigmoid(x):
+    sigmoid_range = 34.538776394910684
+
+    if x <= -sigmoid_range:
+        return 1e-15
+    if x >= sigmoid_range:
+        return 1.0 - 1e-15
+
     return 1/(1+np.exp(-x))
 
 def predict(x, idx, model):
@@ -78,13 +86,21 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
     diversity = 0
     prd = []
     ans = []
+    loss = 0
+    criterion = nn.BCEWithLogitsLoss()
     with torch.no_grad():
         # for x in tqdm(test, total=n_test):
         for x in test:
             x, label = x[0].to(device).double(), x[1].to(device).double()
+
+            if label==-1:
+                loss += criterion(model(x, label, pmi=1), label+1).item()
+            else:
+                loss += criterion(model(x, label, pmi=1), label).item()
+
             target_idx = (x[n_usr:n_usr+n_itm]==1).nonzero()
             # Predict
-            y = model.rank_list(x).cpu().numpy()
+            y = model.rank_list(x).view(-1).cpu().numpy()
 
             """debug
             cnt += 1
@@ -108,24 +124,27 @@ def evaluate(test, n_test, model, n_usr, n_itm, device, C=100, beta=5, n_rank=10
             if label==1:
                 # If label is pos, the greater value of y is better.
                 # If label is neg, the lower value of y is better.
-                y*=-1
 
-            # Normalize 0 to 1000
-            # rank = minmax_scale(y[0], feature_range=(0,1000))
-            rank = rankdata(y, method="min")
-            diversity += len(set(rank))
-            rank = rank[target_idx]
+                # Normalize 0 to 1000
+                # rank = minmax_scale(y[0], feature_range=(0,1000))
+                rank = rankdata(y, method="min")
+                diversity += len(set(rank))
+                rank = rank[target_idx]
 
-            # Summation for HLU
-            rank_sum += 2**((1-rank)/beta)
+                # Summation for HLU
+                rank_sum += 2**((1-rank)/beta)
 
-            # R@N
-            if rank<n_rank+1:
-                r_at_n+=1
+                # R@N
+                if rank<n_rank+1:
+                    r_at_n+=1
+                cnt+=1
 
-    hlu = (C*rank_sum)/n_test
-    r_at_n /=n_test
-    diversity/=n_test
+    hlu = (C*rank_sum)/cnt
+    r_at_n/=cnt
+    diversity/=cnt
+    loss/=n_test
+    print(f"Loss      : {loss}")
+
     if fAUC:
         fpr, tpr, thresholds = metrics.roc_curve(ans, prd, pos_label=1)
         auc = metrics.auc(fpr, tpr)
