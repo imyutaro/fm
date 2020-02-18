@@ -1,3 +1,4 @@
+import os
 import random
 import pickle
 import torch
@@ -15,8 +16,13 @@ def seed_everything(seed=1234):
 seed_everything(seed)
 
 class Data():
-    def __init__(self, filename="transaction.dat", root_dir="../data/ta_feng/"):
-        self.root_dir = root_dir
+    def __init__(self, filename="transaction.dat", root_dir=None):
+        if not root_dir:
+            from hydra import utils
+            self.root_dir = os.path.dirname(utils.get_original_cwd())
+            self.root_dir = os.path.join(self.root_dir, "data/ta_feng/")
+        else:
+            self.root_dir = root_dir
 
         f = open(self.root_dir+filename, "rb")
         data = pickle.load(f)

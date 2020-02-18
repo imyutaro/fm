@@ -1,0 +1,17 @@
+defaults:
+  - optim: adam
+  - hydra_basic
+basic:
+  seed: 1234
+  epochs: 21
+  neg: 2
+model:
+  name: "BFM"
+  k: 4
+  gamma: [1,1,1,1]
+  alpha: 0.0
+  norm: False
+pretrain:
+  load: False
+  path: "trained/2019-11-08/BFM_4.pt"
+  epochs: 21

@@ -2,6 +2,13 @@ import os
 import random
 import numpy as np
 
+import hydra
+from hydra import utils
+import logging
+from omegaconf import DictConfig
+logging.basicConfig(format="%(message)s", level=logging.INFO)
+log = logging.getLogger(__name__) # A logger for this file
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -268,20 +275,23 @@ class BFM(nn.Module):
 
         return y
 
-def main():
+@hydra.main(config_path="config/bfm.yaml")
+def main(cfg: DictConfig) -> None:
     import sys
-    sys.path.append("../")
+    sys.path.append(os.path.dirname(utils.get_original_cwd())) # to import dataloader
     import datetime
     from torch.utils.data import DataLoader
 
     from dataloader import Data
 
-    seed=1234
+    seed = cfg["basic"]["seed"]
     seed_everything(seed)
 
     ds = Data()
     train, test, valid = ds.get_data()
 
+    # model params
+    model_name = cfg["model"]["name"]
     """
     n: # users
     m: # items
@@ -289,19 +299,14 @@ def main():
     """
     n = len(ds.usrset)
     m = len(ds.itemset)
-    k = 4
+    k = cfg["model"]["k"]
+    gamma = cfg["model"]["gamma"]
+    alpha = cfg["model"]["alpha"]
+    norm = cfg["model"]["norm"]
 
-    gamma=[1,1,1,1]
-    alpha=0.0
-    norm=False
-
-    # lr=0.0001
-    lr=0.01
-    momentum=0
-    weight_decay=0.01
-
-    epochs=21
-    neg=2
+    # learn params
+    epochs = cfg["basic"]["epochs"]
+    neg = cfg["basic"]["neg"]
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = BFM(n, m, k, gamma, alpha).to(device=device)
@@ -309,13 +314,21 @@ def main():
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    optimizer = optim.SGD(model.parameters(), \
-                          lr=lr, \
-                          momentum=momentum, \
-                          weight_decay=weight_decay)
-    # optimizer = optim.Adam(model.parameters(), \
-    #                       lr=lr, \
-    #                       weight_decay=weight_decay)
+    if cfg["optim"]["type"]=="sgd":
+        lr=cfg["optim"]["params"]["lr"]
+        momentum=cfg["optim"]["params"]["momentum"]
+        weight_decay=cfg["optim"]["params"]["weight_decay"]
+        optimizer = optim.SGD(model.parameters(), \
+                              lr=lr, \
+                              momentum=momentum, \
+                              weight_decay=weight_decay)
+    elif cfg["optim"]["type"]=="adam":
+        lr=cfg["optim"]["params"]["lr"]
+        weight_decay=cfg["optim"]["params"]["weight_decay"]
+        optimizer = optim.Adam(model.parameters(), \
+                               lr=lr, \
+                               weight_decay=weight_decay)
+
     criterion = nn.BCEWithLogitsLoss()
 
     # traced = torch.jit.script(model)
@@ -348,47 +361,48 @@ def main():
     """
 
     # Saved directory
-    today = datetime.date.today()
-    c_time = datetime.datetime.now().strftime("%H-%M-%S")
-    save_dir = f"../trained/bfm/{today}/{c_time}"
-    os.makedirs(save_dir, exist_ok=True)
-    model_name = "BFM"
+    save_dir = os.getcwd()
 
     # Load trained parameters
-    loaded = False
+    loaded = cfg["pretrain"]["load"]
     if loaded:
-        model_path = "../trained/2019-11-08/BFM_4.pt"
+        trained_model = cfg["pretrain"]["path"]
+        model_path = os.path.dirname(utils.get_original_cwd())
+        model_path = os.path.join(model_path, trained_model)
         model.load_state_dict(torch.load(model_path))
-        epochs = 5
+        epochs = cfg["pretrain"]["epochs"]
 
 
     # Print Information
-    print("{:-^60}".format("Data stat"))
-    print(f"# User        : {n}\n" \
-          f"# Item        : {m}\n" \
-          f"Neg sample    : {neg}")
-    print("{:-^60}".format("Optim status"))
-    print(f"Optimizer     : {optimizer}\n" \
-          f"Criterion     : {criterion}\n" \
-          f"Learning rate : {lr}\n" \
-          f"Momentum      : {momentum}\n" \
-          f"Weight decay  : {weight_decay}")
-    print("{:-^60}".format("Model/Learning status"))
-    print(f"Model name    : {model_name}\n" \
-          f"Mid dim       : {k}\n" \
-          f"Gamma         : {gamma}\n" \
-          f"Alpha         : {alpha}\n" \
-          f"Normalize     : {norm}\n" \
-          f"Epochs        : {epochs}\n" \
-          f"Loaded        : {loaded}")
+    log.info("{:-^60}".format("Data stat"))
+    log.info(f"# User        : {n}\n" \
+             f"# Item        : {m}\n" \
+             f"Neg sample    : {neg}")
+    log.info("{:-^60}".format("Optim status"))
+    log.info(f"Optimizer     : {optimizer}\n" \
+             f"Criterion     : {criterion}\n" \
+             f"Learning rate : {lr}\n" \
+             f"Weight decay  : {weight_decay}")
+    if cfg["optim"]["type"]=="sgd":
+        log.info(f"Momentum      : {momentum}")
+    log.info("{:-^60}".format("Model/Learning status"))
+    log.info(f"Model name    : {model_name}\n" \
+             f"Mid dim       : {k}\n" \
+             f"Gamma         : {gamma}\n" \
+             f"Alpha         : {alpha}\n" \
+             f"Normalize     : {norm}\n" \
+             f"Epochs        : {epochs}\n" \
+             f"Loaded        : {loaded}")
     if loaded:
-        print(f"Learned model : {model_path}")
-    print("{:-^60}".format("Description"))
-    print("Changed random seed to get train data\n"\
-         "Use double type for all layers.")
-    print("{:-^60}".format("Path"))
-    print(f"{save_dir}")
-    print("{:-^60}".format(""), flush=True)
+        log.info(f"Learned model : {model_path}")
+    log.info("{:-^60}".format("Description"))
+    log.info("Changed random seed to get train data\n"\
+              "Use double type for all layers.")
+    log.info("{:-^60}".format("Path"))
+    log.info(f"{save_dir}")
+    # Maybe dont need flush?
+    # log.info("{:-^60}".format(""), flush=True)
+    log.info("{:-^60}".format(""))
 
 
     for e in range(epochs):
@@ -396,7 +410,7 @@ def main():
         ave_loss = 0
         random.seed(seed)
         seed = random.randint(0, 9999)
-        print("{:-^60}".format(f"epoch {e}, seed={seed}"))
+        log.info("{:-^60}".format(f"epoch {e}, seed={seed}"))
 
         train, _, _ = ds.get_data(neg=neg, seed=seed)
         for x in train:
@@ -415,10 +429,10 @@ def main():
                 ave_loss += loss.item()
             cnt+=1
             if cnt%2500==0:
-                print(f"Last loss : {loss.item():>10.6f} at {cnt:6d}, " \
-                      f"Label : {label.item():2.0f},   " \
-                      f"# basket item : {x.sum().item()-2:3.0f},   " \
-                      f"Average loss so far : {ave_loss/cnt:>9.6f}", flush=True)
+                log.info(f"Last loss : {loss.item():>10.6f} at {cnt:6d}, " \
+                         f"Label : {label.item():2.0f},   " \
+                         f"# basket item : {x.sum().item()-2:3.0f},   " \
+                         f"Average loss so far : {ave_loss/cnt:>9.6f}")
         # torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
         # Better way to save model?
         state = {"name": model_name, "epoch": e, "state_dict": model.state_dict(),
@@ -426,7 +440,7 @@ def main():
                  "k": k, "gamma": gamma, "alpha": alpha, "norm": norm}
         torch.save(state, f"{save_dir}/{model_name}_{e}.pt")
 
-        print("{:-^60}".format("end"))
+        log.info("{:-^60}".format("end"))
 
 if __name__=="__main__":
     main()
