@@ -12,6 +12,7 @@ img/
 path*
 hlu.txt
 r@n.txt
+nohup.out
 
 tmp/
 tmp*/
