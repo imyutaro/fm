@@ -284,14 +284,14 @@ def main(cfg: DictConfig) -> None:
 
     from dataloader import Data
 
-    seed = cfg["basic"]["seed"]
+    seed = cfg.basic.seed
     seed_everything(seed)
 
     ds = Data()
     train, test, valid = ds.get_data()
 
     # model params
-    model_name = cfg["model"]["name"]
+    model_name = cfg.model.name
     """
     n: # users
     m: # items
@@ -299,14 +299,14 @@ def main(cfg: DictConfig) -> None:
     """
     n = len(ds.usrset)
     m = len(ds.itemset)
-    k = cfg["model"]["k"]
-    gamma = cfg["model"]["gamma"]
-    alpha = cfg["model"]["alpha"]
-    norm = cfg["model"]["norm"]
+    k = cfg.model.k
+    gamma = cfg.model.gamma
+    alpha = cfg.model.alpha
+    norm = cfg.model.norm
 
     # learn params
-    epochs = cfg["basic"]["epochs"]
-    neg = cfg["basic"]["neg"]
+    epochs = cfg.basic.epochs
+    neg = cfg.basic.neg
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = BFM(n, m, k, gamma, alpha).to(device=device)
@@ -314,17 +314,17 @@ def main(cfg: DictConfig) -> None:
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    if cfg["optim"]["type"]=="sgd":
-        lr=cfg["optim"]["params"]["lr"]
-        momentum=cfg["optim"]["params"]["momentum"]
-        weight_decay=cfg["optim"]["params"]["weight_decay"]
+    if cfg.optim.type=="sgd":
+        lr=cfg.optim.params.lr
+        momentum=cfg.optim.params.momentum
+        weight_decay=cfg.optim.params.weight_decay
         optimizer = optim.SGD(model.parameters(), \
                               lr=lr, \
                               momentum=momentum, \
                               weight_decay=weight_decay)
-    elif cfg["optim"]["type"]=="adam":
-        lr=cfg["optim"]["params"]["lr"]
-        weight_decay=cfg["optim"]["params"]["weight_decay"]
+    elif cfg.optim.type=="adam":
+        lr=cfg.optim.params.lr
+        weight_decay=cfg.optim.params.weight_decay
         optimizer = optim.Adam(model.parameters(), \
                                lr=lr, \
                                weight_decay=weight_decay)
@@ -364,13 +364,13 @@ def main(cfg: DictConfig) -> None:
     save_dir = os.getcwd()
 
     # Load trained parameters
-    loaded = cfg["pretrain"]["load"]
+    loaded = cfg.pretrain.load
     if loaded:
-        trained_model = cfg["pretrain"]["path"]
+        trained_model = cfg.pretrain.path
         model_path = os.path.dirname(utils.get_original_cwd())
         model_path = os.path.join(model_path, trained_model)
         model.load_state_dict(torch.load(model_path))
-        epochs = cfg["pretrain"]["epochs"]
+        epochs = cfg.pretrain.epochs
 
 
     # Print Information
@@ -383,7 +383,7 @@ def main(cfg: DictConfig) -> None:
              f"Criterion     : {criterion}\n" \
              f"Learning rate : {lr}\n" \
              f"Weight decay  : {weight_decay}")
-    if cfg["optim"]["type"]=="sgd":
+    if cfg.optim.type=="sgd":
         log.info(f"Momentum      : {momentum}")
     log.info("{:-^60}".format("Model/Learning status"))
     log.info(f"Model name    : {model_name}\n" \
