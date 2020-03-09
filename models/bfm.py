@@ -304,27 +304,21 @@ def main(cfg: DictConfig) -> None:
     alpha = cfg.model.alpha
     norm = cfg.model.norm
 
-    # learn params
-    epochs = cfg.basic.epochs
-    neg = cfg.basic.neg
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = BFM(n, m, k, gamma, alpha).to(device=device)
 
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
+    lr = cfg.optim.params.lr
+    weight_decay = cfg.optim.params.weight_decay
     if cfg.optim.type=="sgd":
-        lr=cfg.optim.params.lr
-        momentum=cfg.optim.params.momentum
-        weight_decay=cfg.optim.params.weight_decay
+        momentum = cfg.optim.params.momentum
         optimizer = optim.SGD(model.parameters(), \
                               lr=lr, \
                               momentum=momentum, \
                               weight_decay=weight_decay)
     elif cfg.optim.type=="adam":
-        lr=cfg.optim.params.lr
-        weight_decay=cfg.optim.params.weight_decay
         optimizer = optim.Adam(model.parameters(), \
                                lr=lr, \
                                weight_decay=weight_decay)
@@ -359,6 +353,10 @@ def main(cfg: DictConfig) -> None:
     os.makedirs("../trained", exist_ok=True)
     torch.save(model.state_dict(), "../trained/BFM_alldelta1.pt")
     """
+
+    # Experiment settings
+    epochs = cfg.basic.epochs
+    neg = cfg.basic.neg
 
     # Saved directory
     save_dir = os.getcwd()

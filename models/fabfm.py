@@ -2,6 +2,12 @@ import os
 import random
 import numpy as np
 
+import hydra
+import logging
+from hydra import utils
+from omegaconf import DictConfig
+log = logging.getLogger(__name__)
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -157,7 +163,7 @@ class FABFM(BFM):
         # Just multiply attn and target item vector
         # Experimental ------------
         attn_V = attn_V.sum(1).view(1,-1)
-        attn_V = torch.mm(attn_V, self.O)
+        attn_V = torch.relu(torch.mm(attn_V, self.O))
         attn_V = self.layernorm1(attn_V)
         t_b = torch.mm(t_vec, attn_V.t())
         # Original -----------------
@@ -316,15 +322,16 @@ class FABFM(BFM):
 
         return y
 
-def main():
+@hydra.main(config_path="config/fabfm.yaml")
+def main(cfg: DictConfig) -> None:
     import sys
-    sys.path.append("../")
+    sys.path.append(os.path.dirname(utils.get_original_cwd())) # to import dataloader
     import datetime
     from torch.utils.data import DataLoader
 
     from dataloader import Data
 
-    seed=1234
+    seed=cfg.basic.seed
     seed_everything(seed)
 
     ds = Data()
@@ -337,22 +344,13 @@ def main():
     """
     n_usr = len(ds.usrset)
     n_itm = len(ds.itemset)
-    k = 16
+    k = cfg.model.k
 
-    gamma=[1,1,0,1]
-    alpha=0.0
-    d=k
-    h=2
-    norm=False
-
-    lr=0.0001
-    momentum=0
-    # weight_decay=1e-5
-    weight_decay=0
-
-    # epochs=21
-    epochs=100
-    neg=2
+    gamma=cfg.model.gamma
+    alpha=cfg.model.alpha
+    d=cfg.model.d
+    h=cfg.model.h
+    norm=cfg.model.norm
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = FABFM(n_usr, n_itm, k, d, h, gamma, alpha, norm).to(device=device)
@@ -360,14 +358,24 @@ def main():
     # \alpha*||w||_2 is L2 reguralization
     # weight_decay option is for reguralization
     # weight_decay number is \alpha
-    # optimizer = optim.SGD(model.parameters(), \
-    #                       lr=lr, \
-    #                       momentum=momentum, \
-    #                       weight_decay=weight_decay)
-    optimizer = optim.Adam(model.parameters(), \
-                          lr=lr, \
-                          weight_decay=weight_decay)
+    lr = cfg.optim.params.lr
+    weight_decay = cfg.optim.params.weight_decay
+    if cfg.optim.type=="sgd":
+        momentum = cfg.optim.params.momentum
+        optimizer = optim.SGD(model.parameters(), \
+                              lr=lr, \
+                              momentum=momentum, \
+                              weight_decay=weight_decay)
+    elif cfg.optim.type=="adam":
+        optimizer = optim.Adam(model.parameters(), \
+                              lr=lr, \
+                              weight_decay=weight_decay)
+
     criterion = nn.BCEWithLogitsLoss()
+
+    # Experiment settings
+    epochs=cfg.basic.epochs
+    neg=cfg.basic.neg
 
     # Saved directory
     today = datetime.date.today()
@@ -377,50 +385,53 @@ def main():
     model_name = "FABFM"
 
     # Load trained parameters
-    loaded = False
+    loaded = cfg.pretrain.load
     if loaded:
-        model_path = ""
+        trained_model = cfg.pretrain.path
+        model_path = os.path.dirname(utils.get_original_cwd())
+        model_path = os.path.join(model_path, trained_model)
         model, train, test, l_train, l_test, n_usr, n_itm, seed = load_model(model_path, device, model_name="FABFM", seed=seed)
-        epochs = 101
+        epochs = cfg.pretrain.epochs
 
-    # Print Information
-    print("{:-^60}".format("Data stat"))
-    print(f"# User        : {n_usr}\n" \
-          f"# Item        : {n_itm}\n" \
-          f"Neg sample    : {neg}")
-    print("{:-^60}".format("Optim status"))
-    print(f"Optimizer     : {optimizer}\n" \
-          f"Criterion     : {criterion}\n" \
-          f"Learning rate : {lr}\n" \
-          f"Momentum      : {momentum}\n" \
-          f"Weight decay  : {weight_decay}")
-    print("{:-^60}".format("Model/Learning status"))
-    print(f"Model name    : {model_name}\n" \
-          f"Mid dim k     : {k}\n" \
-          f"Q,K,M dim d   : {d}\n" \
-          f"Head          : {h}\n" \
-          f"Gamma         : {gamma}\n" \
-          f"Alpha         : {alpha}\n" \
-          f"Epochs        : {epochs}\n" \
-          f"Norm          : {norm}\n" \
-          f"Loaded        : {loaded}")
+    # Show model, experiment Information
+    log.info("{:-^60}".format("Data stat"))
+    log.info(f"# User        : {n_usr}\n" \
+             f"# Item        : {n_itm}\n" \
+             f"Neg sample    : {neg}")
+    log.info("{:-^60}".format("Optim status"))
+    log.info(f"Optimizer     : {optimizer}\n" \
+             f"Criterion     : {criterion}\n" \
+             f"Learning rate : {lr}\n" \
+             f"Weight decay  : {weight_decay}")
+    if cfg.optim.type=="sgd":
+        log.info(f"Momentum      : {momentum}")
+    log.info("{:-^60}".format("Model/Learning status"))
+    log.info(f"Model name    : {model_name}\n" \
+             f"Mid dim k     : {k}\n" \
+             f"Q,K,M dim d   : {d}\n" \
+             f"Head          : {h}\n" \
+             f"Gamma         : {gamma}\n" \
+             f"Alpha         : {alpha}\n" \
+             f"Epochs        : {epochs}\n" \
+             f"Norm          : {norm}\n" \
+             f"Loaded        : {loaded}")
     if loaded:
-        print(f"Learned model : {model_path}")
-    print("{:-^60}".format("Description"))
-    print("Addition and normalization with h*n_b.\n"\
-          "Attention is applied to only t_b and u_b.\n"\
-          "Use same vector for target and basket.\n"\
-          "Changed random seed to get train data.\n"\
-          "Add layer normalization after attn_V*O\n"\
-          # "Change L2 norm coefficient to 1e-5(0.00001).\n"\
-          "no basket interaction\n"\
-          # "Normalize basket items interaction.\n"\
-          "Without L2 norm.\n"\
-          # "Pos:Neg=1:1\n"\
-          "Use double type for all layers.")
-    print("{:-^60}".format("Path"))
-    print(f"{save_dir}")
-    print("{:-^60}".format(""), flush=True)
+        log.info(f"Learned model : {model_path}")
+    log.info("{:-^60}".format("Description"))
+    log.info("Addition and normalization with h*n_b.\n"\
+             "Attention is applied to only t_b and u_b.\n"\
+             "Use same vector for target and basket.\n"\
+             "Changed random seed to get train data.\n"\
+             "Add layer normalization after attn_V*O\n"\
+             # "Change L2 norm coefficient to 1e-5(0.00001).\n"\
+             "no basket interaction\n"\
+             # "Normalize basket items interaction.\n"\
+             "Without L2 norm.\n"\
+             # "Pos:Neg=1:1\n"\
+             "Use double type for all layers.")
+    log.info("{:-^60}".format("Path"))
+    log.info(f"{save_dir}")
+    log.info("{:-^60}".format(""))
 
 
     for e in range(epochs):
@@ -428,7 +439,7 @@ def main():
         ave_loss = 0
         random.seed(seed)
         seed = random.randint(0, 9999)
-        print("{:-^60}".format(f"epoch {e}, seed={seed}"))
+        log.info("{:-^60}".format(f"epoch {e}, seed={seed}"))
 
         train, _, _ = ds.get_data(neg=neg, seed=seed)
         for x in train:
@@ -446,11 +457,11 @@ def main():
                 ave_loss += loss.item()
             cnt+=1
             if cnt%2500==0:
-                print(f"Last loss : {loss.item():>10.6f} at {cnt:6d}, " \
-                      f"Label : {label.item():2.0f},   " \
-                      f"# basket item : {x.sum().item()-2:3.0f},   " \
-                      f"Average loss so far : {ave_loss/cnt:>9.6f}", flush=True)
-        # print(cnt) # => 957264
+                log.info(f"Last loss : {loss.item():>10.6f} at {cnt:6d}, " \
+                         f"Label : {label.item():2.0f},   " \
+                         f"# basket item : {x.sum().item()-2:3.0f},   " \
+                         f"Average loss so far : {ave_loss/cnt:>9.6f}")
+        # log.info(cnt) # => 957264
         # torch.save(model.state_dict(), f"{save_dir}/{model_name}_{e}.pt")
         # Better way to save model?
         state = {"name": model_name, "epoch": e, "state_dict": model.state_dict(),
@@ -458,7 +469,7 @@ def main():
                  "d": d, "h": h, "gamma": gamma, "alpha": alpha, "norm": norm}
         torch.save(state, f"{save_dir}/{model_name}_{e}.pt")
 
-        print("{:-^60}".format("end"))
+        log.info("{:-^60}".format("end"))
 
 if __name__=="__main__":
     main()

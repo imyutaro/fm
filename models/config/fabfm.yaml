@@ -1,0 +1,19 @@
+defaults:
+  - optim: adam
+  - hydra_basic
+basic:
+  seed: 1234
+  epochs: 51
+  neg: 2
+model:
+  name: "FABFM"
+  k: &mid_dim 4
+  h: 2
+  d: *mid_dim
+  gamma: [1,1,1,1]
+  alpha: 0.0
+  norm: False
+pretrain:
+  load: False
+  path: "trained/"
+  epochs: 100
