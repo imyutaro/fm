@@ -7,8 +7,8 @@ basic:
   neg: 2
 model:
   name: "FABFM"
-  k: &mid_dim 4
-  h: 2
+  k: &mid_dim 16
+  h: 4
   d: *mid_dim
   gamma: [1,1,1,1]
   alpha: 0.0
@@ -17,3 +17,7 @@ pretrain:
   load: False
   path: "trained/"
   epochs: 100
+hydra:
+  run:
+    dir:
+      ../trained/fabfm/${now:%Y-%m-%d}/${now:%H-%M-%S}/

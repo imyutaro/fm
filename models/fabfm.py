@@ -287,7 +287,8 @@ class FABFM(BFM):
         attn_V = attn_V.permute(1,0,2)
         attn_V = attn_V.reshape(self.m, -1)
         # attn_V = torch.cat((attn_V[0], attn_V[1]), dim=-1) # original if h==2, it's okay
-        attn_V = torch.mm(attn_V, self.O)
+        # TODO: ReLU function is good?
+        attn_V = torch.relu(torch.mm(attn_V, self.O))
         # r_lnorm = nn.LayerNorm(attn_V.size[1:])
         # attn_V = r_lnorm(attn_V)
         attn_V = self.layernorm1(attn_V)
@@ -337,6 +338,8 @@ def main(cfg: DictConfig) -> None:
     ds = Data()
     _, _, _ = ds.get_data()
 
+    #model params
+    model_name = cfg.model.name
     """
     n: # users
     m: # items
@@ -378,11 +381,7 @@ def main(cfg: DictConfig) -> None:
     neg=cfg.basic.neg
 
     # Saved directory
-    today = datetime.date.today()
-    c_time = datetime.datetime.now().strftime("%H-%M-%S")
-    save_dir = f"../trained/fixed_abfm/{today}/{c_time}"
-    os.makedirs(save_dir, exist_ok=True)
-    model_name = "FABFM"
+    save_dir = os.getcwd()
 
     # Load trained parameters
     loaded = cfg.pretrain.load

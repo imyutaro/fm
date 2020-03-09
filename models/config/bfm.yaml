@@ -15,3 +15,7 @@ pretrain:
   load: False
   path: "trained/2019-11-08/BFM_4.pt"
   epochs: 21
+hydra:
+  run:
+    dir:
+      ../trained/bfm/${now:%Y-%m-%d}/${now:%H-%M-%S}/
